@@ -1,0 +1,2 @@
+machinable
+git+https://github.com/GazzolaLab/MiV-Simulator.git#egg=miv_simulator
