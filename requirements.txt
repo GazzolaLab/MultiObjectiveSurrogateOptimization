@@ -1,0 +1,4 @@
+machinable
+distwq
+scikit-learn
+git+https://github.com/GazzolaLab/MiV-Simulator.git#egg=miv_simulator

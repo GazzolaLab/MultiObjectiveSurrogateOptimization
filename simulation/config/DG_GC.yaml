@@ -1,0 +1,136 @@
+Celltype: DG_GC
+Template:
+  default:
+    name: PR_nrn
+    file: PR_nrn.hoc
+  PRS:
+    name: PRS_nrn
+    file: PRS_nrn.hoc
+Numerics:
+    adaptive: False
+    use_coreneuron: True
+    t0: 0
+    tstop: 1500
+    dt: 0.01
+    record_dt: 0.01
+    v_init: -60.0
+Record: 
+    soma: ['V']
+    dend: ['V']
+Targets:
+Target namespaces:
+  Degro2022:
+    Rin:    
+      V: [-60.0, -70.0, -60.0]
+      V_factor: 1.0
+      upper: [300.0]
+      mean: [253.5]
+      lower: [200.0]
+      t: [250, 750, 1000]
+    tau0:    
+      I: [-0.01]
+      upper: [33.4]
+      lower: [17.4]
+      t: [250, 750]
+    threshold: -41.7
+    V_hold:
+      val: -60
+      I : 0 
+    V_rest:
+      val: -80
+      I : 0 
+    f_I:
+      I: [100.0, 150.0, 200.0, 250.0, 500.0]
+      I_factor: 1.0e-3
+      mean: [14.0, 25.8, 37.8, 49.1, 70.7]
+      lower: [0.0, 0.0, 8.0, 17.3, 48.0]
+      upper: [24.0, 44.7, 60.7, 76.7, 108.0]
+      t: [500, 1000]
+    spike_amp:
+      upper: [86.0]
+      lower: [62.0]
+    spike_adaptation:
+      I: [250.0]
+      I_factor: 1.0e-3
+      upper: [2.7]
+      lower: [1.33]
+      t: [500, 1000]
+PRS best:
+  20230105:
+    Ltotal: 13.787500381469727
+    pp: 0.5229923129081726
+    gc: 94.00408172607422
+    soma_gmax_Na: 0.6127524971961975
+    soma_gmax_K: 0.9146815538406372
+    soma_g_pas: 0.0008125000167638063
+    dend_gmax_Ca: 0.2375480830669403
+    dend_gmax_KCa: 0.2932499945163727
+    dend_gmax_KAHP: 404.50482177734375
+    dend_g_pas: 3.36538469127845e-05
+    dend_beta_Caconc: 0.08330711722373962
+    dend_d_Caconc: 13.475198745727539
+    cm_ratio: 29.081710815429688
+    global_diam: 10.0
+    global_cm: 3.0
+    e_pas: -77.0
+    ic_constant_rest: -0.017977942
+    ic_constant_hold: -0.030721044
+best:
+  20230106:
+    Ltotal: 11.725961685180664
+    pp: 0.6440384387969971
+    gc: 3.6560559272766113
+    soma_gmax_Na: 0.6067621111869812
+    soma_gmax_K: 0.7168795466423035
+    soma_g_pas: 0.00048749998677521944
+    dend_gmax_Ca: 0.6963749527931213
+    dend_gmax_KCa: 0.3426346182823181
+    dend_gmax_KAHP: 0.6631442308425903
+    dend_aqs_KAHP: 2e-05
+    dend_bq_KAHP: 0.001
+    dend_g_pas: 0.0012098076986148953
+    dend_beta_Caconc: 0.1946544200181961
+    dend_d_Caconc: 8.480026245117188
+    cm_ratio: 21.963520050048828
+    global_diam: 10.0
+    global_cm: 3.0
+    e_pas: -77.0
+    ic_constant_hold: -0.028613409
+    ic_constant_rest: 0.0030013763
+Parameters:
+  dend_aqs_KAHP:  0.00002
+  dend_bq_KAHP:  0.001
+  global_diam:  10.0
+  global_cm:  3.0
+  e_pas: -77
+Space:
+  Ltotal: [10.0, 60.0]
+  pp: [0.5, 0.9]
+  gc: [0.1, 100.0]
+  soma_gmax_Na:  [0.01, 0.9]
+  soma_gmax_K:  [0.001, 1.0]
+  soma_g_pas:  [0.0, 0.01]
+  dend_gmax_Ca:  [0.0, 0.9]
+  dend_gmax_KCa:  [0.0, 1.0]
+  dend_gmax_KAHP:  [0.0, 0.9]
+  dend_g_pas:  [0.0, 0.01]
+  dend_beta_Caconc: [0.01, 0.2]
+  dend_d_Caconc:    [0.05, 20.0]
+  cm_ratio: [1.0, 50.0]
+Space Sensitivity:
+  Ltotal: 20.
+  pp: 1.0
+  gc:  20.
+  soma_gmax_Na:  1.0
+  soma_gmax_K:  1.0
+  soma_g_pas:  1.0
+  dend_gmax_Ca:  20.0
+  dend_gmax_KCa:  1.0
+  dend_gmax_KAHP:  1.0
+  dend_g_pas:  1.0
+  dend_d_Caconc: 20.0
+  dend_beta_Caconc: 1.0
+  cm_ratio: 20.0
+Variant Space:
+  PRS:
+    dend_gmax_KAHP:  [50.0, 500.0]
