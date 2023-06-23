@@ -1,16 +1,12 @@
 import logging
+import os
 
 import numpy as np
 import yaml
 from neuron import h
 
-import motoneurons.ephys_utils as ephys
-from motoneurons.neuron_utils import (
-    ic_constant_f,
-    run_iclamp,
-    run_iclamp_steps,
-    run_vclamp,
-)
+from utils import ephys
+from utils.neuron import ic_constant_f, run_iclamp, run_iclamp_steps, run_vclamp
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +15,16 @@ logger = logging.getLogger(__name__)
 def load(filepath: str):
     with open(filepath) as f:
         return yaml.load(f, Loader=yaml.FullLoader)
+
+
+def from_yaml(filename: str):
+    if "." not in filename:
+        filename += ".yaml"
+    return load(
+        os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "simulation", "config", filename
+        )
+    )
 
 
 class ExperimentalProtocol(object):

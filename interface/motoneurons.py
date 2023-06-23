@@ -1,6 +1,7 @@
+import logging
 import os
-import time
 from dataclasses import dataclass
+from functools import partial
 from typing import Dict, Union
 
 import numpy as np
@@ -10,13 +11,22 @@ from machinable import Component
 from machinable.config import Field
 from miv_simulator.mechanisms import compile_and_load
 from mpi4py import MPI
+from neuron import h
 from numpy.random import default_rng
+from scipy import optimize, signal
+
+from utils import ephys
+from utils.neuron import ic_constant_f, load_template, run_iclamp
+from utils.protocol import ExperimentalProtocol
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Motoneurons(Component):
     @dataclass
     class Config:
-        protocol: Dict = Field("proto()")
+        protocol: Dict = Field("???")
         target_namespace: str = None
         model_variant: str = "default"
         num_epochs: int = 10
@@ -39,7 +49,11 @@ class Motoneurons(Component):
         return self.local_directory("dmosopt.h5")
 
     def on_instantiate(self):
-        compile_and_load(os.path.join(os.path.dirname(__file__), "mechanisms"))
+        compile_and_load(
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "simulation", "mechanisms"
+            )
+        )
 
     def on_write_meta_data(self):
         comm = MPI.COMM_WORLD
@@ -47,10 +61,6 @@ class Motoneurons(Component):
         return rank == 0
 
     def __call__(self):
-        import motoneurons.ephys_utils as ephys
-        from motoneurons.neuron_utils import load_template
-        from motoneurons.protocol import ExperimentalProtocol
-
         comm = MPI.COMM_WORLD
 
         local_random = None
@@ -73,9 +83,7 @@ class Motoneurons(Component):
                 )
             else:
                 raise RuntimeError(f"Unknown model variant {self.config.model_variant}")
-        template = load_template(
-            template_name, os.path.join(os.path.dirname(__file__), template_file)
-        )
+        template = load_template(template_name, f"$/{template_file}")
 
         N_exp = len(self.config.protocol["Targets"]["f_I"]["I"])
         if self.config.target_namespace is not None:
@@ -222,7 +230,7 @@ class Motoneurons(Component):
         dmosopt_params = {
             "opt_id": f"dmosopt_{celltype}_neuron",
             "obj_fun_init_name": "make_obj_fun",
-            "obj_fun_init_module": "motoneurons.objective",
+            "obj_fun_init_module": self.module,
             "obj_fun_init_args": {
                 "protocol_config_dict": self.config.protocol,
                 "feature_dtypes": feature_dtypes,
@@ -280,8 +288,6 @@ class Motoneurons(Component):
     def plot(self):
         import matplotlib.pyplot as plt
 
-        from motoneurons.neuron_utils import load_template, run_iclamp
-
         data = self.load_file("best.p")
 
         if data is None:
@@ -324,9 +330,7 @@ class Motoneurons(Component):
                 )
             else:
                 raise RuntimeError(f"Unknown model variant {self.config.model_variant}")
-        template = load_template(
-            template_name, os.path.join(os.path.dirname(__file__), template_file)
-        )
+        template = load_template(template_name, f"$/{template_file}")
 
         cell = template(param_dict)
 
@@ -343,76 +347,280 @@ class Motoneurons(Component):
 
         return fp
 
-    def config_proto(self):
-        return {
-            "Celltype": "Motoneuron",
-            "Numerics": {
-                "adaptive": False,
-                "use_coreneuron": True,
-                "t0": 0,
-                "tstop": 2000,
-                "dt": 0.0125,
-                "record_dt": 0.01,
-                "v_init": -60,
-            },
-            "Record": {"soma": ["V"], "dend": ["V"]},
-            "Targets": {
-                "Rin": {
-                    "I": [-100],
-                    "I_factor": 0.001,
-                    "upper": [598],
-                    "lower": [540],
-                    "t": [250, 1250],
-                },
-                "tau0": {
-                    "I": [-0.1],
-                    "upper": [19.375],
-                    "lower": [16.308],
-                    "t": [250, 1250],
-                },
-                "threshold": -37,
-                "V_hold": {"val": -60, "I": 0},
-                "V_rest": {"val": -57.4, "I": 0},
-                "f_I": {
-                    "I": [20, 30, 40, 50, 60, 70, 80],
-                    "I_factor": 0.001,
-                    "mean": [3.88, 9.09, 11.75, 14.29, 15.96, 16.58, 18.25],
-                    "t": [500, 1500],
-                },
-                "spike_amp": {
-                    "upper": [80, 80, 80, 80, 80, 80, 80],
-                    "lower": [60, 60, 60, 60, 60, 60, 60],
-                },
-                "spike_adaptation": {
-                    "upper": [1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6],
-                    "lower": [1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2],
-                    "t": [500, 1500],
-                },
-            },
-            "Parameters": {
-                "soma_f_Caconc": 0.004,
-                "soma_alpha_Caconc": 1,
-                "soma_kCa_Caconc": 8,
-                "dend_f_Caconc": 0.004,
-                "dend_alpha_Caconc": 1,
-                "dend_kCa_Caconc": 8,
-                "global_diam": 5,
-                "global_cm": 2,
-                "e_pas": -62,
-                "pp": 0.1,
-                "Ltotal": 120,
-            },
-            "Space": {
-                "gc": [0.1, 2],
-                "soma_gmax_Na": [0.1, 0.3],
-                "soma_gmax_K": [0.01, 0.3],
-                "soma_gmax_KCa": [0.0001, 0.01],
-                "soma_gmax_CaN": [0.00001, 0.03],
-                "soma_g_pas": [0.00001, 0.01],
-                "dend_gmax_CaL": [0.00001, 0.001],
-                "dend_gmax_CaN": [0.00001, 0.001],
-                "dend_gmax_KCa": [0.0001, 0.005],
-                "dend_g_pas": [0.00001, 0.01],
-                "cm_ratio": [1, 40],
-            },
-        }
+
+def range_distance(x, lb, ub):
+    # Returns 0. if x is within the range [lb, ub], otherwise returns the smaller of the distance between x and lb, ub
+    return 0.0 if (x >= lb) and (x <= ub) else min(abs(x - lb), abs(x - ub))
+
+
+def lb_distance(x, lb, ub):
+    # Returns 0. if x >= lb, otherwise returns the the distance between x and lb
+    return 0.0 if (x >= lb) else lb - x
+
+
+def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None):
+    h.cvode.use_fast_imem(1)
+    h.cvode.cache_efficient(1)
+    h.secondorder = 2
+
+    h.celsius = celsius
+
+    # Create the cell
+    template = getattr(h, template_name)
+    cell = template(pp)
+
+    # Initialize cell
+    h.v_init = v_hold
+    h.init()
+
+    if ic_constant_val is None:
+        cell.init_ic(h.v_init)
+        ic_constant_0 = cell.soma.ic_constant
+
+        # Obtain value for ic_constant such that RMP = v_hold
+        x0 = 0.0
+        ic_constant0 = ic_constant_0
+        try:
+            x0, res = optimize.brentq(
+                ic_constant_f,
+                -0.5,
+                0.5,
+                args=(template, pp, ic_constant_0, h.v_init),
+                xtol=1e-6,
+                maxiter=200,
+                disp=False,
+                full_output=True,
+            )
+        except ValueError:
+            x0 = 0.0
+        else:
+            if not res.converged:
+                x0 = 0.0
+
+        ic_constant_val = ic_constant_0 + x0
+
+    cell.soma.ic_constant = ic_constant_val
+    h.finitialize(h.v_init)
+    h.finitialize(h.v_init)
+
+    return cell
+
+
+def make_obj_fun(
+    protocol_config_dict, feature_dtypes, template_name, target_namespace, worker
+):
+    exp_protocol = ExperimentalProtocol(
+        protocol_config_dict, target_namespace=target_namespace
+    )
+
+    return partial(obj_fun, exp_protocol, feature_dtypes, template_name)
+
+
+# This is the function which is going to be minimized
+def obj_fun(exp_protocol, feature_dtypes, template_name, pp):
+    template = getattr(h, template_name)
+
+    cell = init_cell(template_name, pp, v_hold=exp_protocol.v_hold)
+    ic_constant_hold = cell.soma.ic_constant
+
+    # Check whether the initial voltage constraint was satisfied
+    initial_v_error_hold = float(
+        ic_constant_f(0.0, template, pp, ic_constant_hold, v_hold=exp_protocol.v_hold)
+    )
+
+    initial_v_constr = 1 if abs(initial_v_error_hold) < 1.0 else -1
+    logger.info(f"ic_constant check: {initial_v_error_hold} constr: {initial_v_constr}")
+
+    cell = init_cell(
+        template_name, pp, v_hold=exp_protocol.v_hold, ic_constant_val=ic_constant_hold
+    )
+
+    rn, tau = np.nan, np.nan
+    iclamp_results = None
+    vclamp_results = None
+    # Measure input resistance and membrane time constant
+    if initial_v_constr > 0:
+        # Run single current injection to measure subthreshold features
+        try:
+            if exp_protocol.rn_exp_type == "iclamp":
+                iclamp_results = exp_protocol.run_iclamp(
+                    cell, target="Rin", tstop=3000.0
+                )
+            elif exp_protocol.rn_exp_type == "vclamp":
+                vclamp_results = exp_protocol.run_vclamp(cell, target="Rin")
+                iclamp_results = exp_protocol.run_iclamp(
+                    cell, target="tau0", tstop=3000.0
+                )
+        except:
+            pass
+        else:
+            passive_results = ephys.measure_passive(**iclamp_results)
+            rn = passive_results["Rinp"]
+            tau = passive_results["tau"]
+            if vclamp_results is not None:
+                rn = ephys.measure_rn_from_vclamp(**vclamp_results)
+
+    target_rn = exp_protocol.target_rn
+    target_tau = exp_protocol.target_tau
+    rn_obj_value = range_distance(rn, target_rn[0], target_rn[1]) ** 2
+    tau_obj_value = range_distance(tau, target_tau[0], target_tau[1]) ** 2
+
+    tau_constr = 1 if ((tau > 0.0) and (tau < 1000.0)) else -1
+    rn_constr = 1 if ((rn > 0.0) and (rn < 1000.0)) else -1
+
+    # Run iclamp experiments
+    iclamp_results = []
+    cell = init_cell(
+        template_name, pp, v_hold=exp_protocol.v_hold, ic_constant_val=ic_constant_hold
+    )
+    iclamp_results = exp_protocol.run_iclamp_steps(cell)
+
+    # Measure spike features
+    (
+        pre_spk_cnt,
+        spk_cnt,
+        spk_infos,
+        thresholds,
+        mean_spike_amplitudes,
+    ) = ephys.measure_spike_features(
+        iclamp_results,
+        exp_protocol.exp_i_inj_t0_f_I,
+        exp_protocol.exp_i_inj_t1_f_I + 2.0,
+    )
+
+    pre_spk_count_constr = -1 if np.sum(pre_spk_cnt) > 0 else 1
+
+    ISI_values = ephys.measure_ISI(exp_protocol.exp_i_inj_amp_f_I, spk_infos)
+
+    ISI_adaptation_dists = list(
+        map(
+            lambda ratio, target_range: range_distance(
+                ratio * 100.0, target_range[0] * 100.0, target_range[1] * 100.0
+            ),
+            ISI_values["ratio"],
+            zip(
+                exp_protocol.exp_i_lb_spk_adaptation,
+                exp_protocol.exp_i_ub_spk_adaptation,
+            ),
+        )
+    )
+    ISI_adaptation_obj_value = np.mean([dist**2 for dist in ISI_adaptation_dists])
+    ISI_adaptation_constr = -1 if np.isnan(ISI_adaptation_obj_value) else 1
+
+    first_ISI_constr = (
+        1 if np.all(ISI_values["first"] > exp_protocol.exp_first_ISI_lower) else -1
+    )
+
+    fI_values = ephys.measure_fI(
+        spk_cnt,
+        exp_protocol.exp_i_inj_t0_f_I,
+        exp_protocol.exp_i_inj_t1_f_I,
+        exp_protocol.exp_i_inj_amp_f_I,
+    )
+
+    fI_mean_target_rate_diff = np.mean(
+        [
+            (target_rate - rate) ** 2
+            for rate, target_rate in zip(
+                fI_values["frequency"], exp_protocol.exp_i_mean_rate_f_I
+            )
+        ]
+    )
+
+    fI_range_dists = list(
+        map(
+            lambda rate, target_range: range_distance(
+                rate, target_range[0], target_range[1]
+            ),
+            fI_values["frequency"],
+            zip(exp_protocol.exp_i_lb_rate_f_I, exp_protocol.exp_i_ub_rate_f_I),
+        )
+    )
+    fI_obj_value = np.mean([dist**2 for dist in fI_range_dists])
+
+    # Compute objectives
+    mean_spike_amplitude_range_dists = list(
+        map(
+            lambda amp, target_amp: None
+            if np.isnan(target_amp[0])
+            else range_distance(amp, target_amp[0], target_amp[1]),
+            mean_spike_amplitudes,
+            zip(exp_protocol.exp_i_lb_spk_amp, exp_protocol.exp_i_ub_spk_amp),
+        )
+    )
+    mean_spike_amplitude_obj_value = np.mean(
+        [
+            dist**2
+            for dist in filter(
+                lambda x: False if x is None else True, mean_spike_amplitude_range_dists
+            )
+        ]
+    )
+    spike_amplitude_constr = -1 if np.isnan(mean_spike_amplitude_obj_value) else 1
+
+    # Check for fI monotonicity
+    fI_rate_diff = np.diff(fI_values["frequency"][:-1])
+    monotonic_fI_constr = 1 if np.all(fI_rate_diff > 0) else -1
+
+    # Obtain ic_constant for v_rest target
+    cell = init_cell(template_name, pp, v_hold=exp_protocol.v_rest)
+    ic_constant_rest = cell.soma.ic_constant
+
+    # Pass to dmosopt
+    feature_list = [
+        (
+            ic_constant_hold,
+            ic_constant_rest,
+            initial_v_error_hold,
+            rn,
+            tau,
+            fI_values,
+            fI_mean_target_rate_diff,
+            ISI_values,
+            thresholds,
+            mean_spike_amplitudes,
+        )
+    ]
+
+    feature_values = np.asarray(
+        [
+            (
+                ic_constant_hold,
+                ic_constant_rest,
+                initial_v_error_hold,
+                rn,
+                tau,
+                fI_values,
+                fI_mean_target_rate_diff,
+                ISI_values,
+                thresholds,
+                mean_spike_amplitudes,
+            )
+        ],
+        dtype=np.dtype(feature_dtypes),
+    )
+    obj_values = np.asarray(
+        [
+            rn_obj_value,
+            tau_obj_value,
+            fI_obj_value,
+            mean_spike_amplitude_obj_value,
+            ISI_adaptation_obj_value,
+        ],
+        dtype=np.float32,
+    )
+    constr_values = np.asarray(
+        [
+            monotonic_fI_constr,
+            rn_constr,
+            tau_constr,
+            spike_amplitude_constr,
+            first_ISI_constr,
+            ISI_adaptation_constr,
+            pre_spk_count_constr,
+            initial_v_constr,
+        ],
+        dtype=np.float32,
+    )
+
+    return obj_values, feature_values, constr_values

@@ -8,9 +8,13 @@ from neuron import h
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+template_directory = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "simulation", "templates", ""
+)
+
 # Load the NEURON libraries
 h.load_file("stdrun.hoc")
-h.load_file(os.path.join(os.path.dirname(__file__), "rn.hoc"))
+h.load_file(os.path.join(template_directory, "rn.hoc"))
 
 pc = h.ParallelContext()
 if hasattr(pc, "mpiabort_on_error"):
@@ -20,7 +24,7 @@ if hasattr(pc, "mpiabort_on_error"):
 def load_template(template_name, template_file=None):
     if template_file is None:
         template_file = f"{template_name}.hoc"
-    h.load_file(template_file)
+    h.load_file(template_file.replace("$/", template_directory))
     template = getattr(h, template_name)
     return template
 
