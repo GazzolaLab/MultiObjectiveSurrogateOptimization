@@ -12,19 +12,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def load(filepath: str):
+def from_yaml(filepath: str):
     with open(filepath) as f:
         return yaml.load(f, Loader=yaml.FullLoader)
 
 
-def from_yaml(filename: str):
-    if "." not in filename:
-        filename += ".yaml"
-    return load(
-        os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "simulation", "config", filename
-        )
+def from_config_file(filepath: str):
+    config_directory = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "simulation", "config"
     )
+    return from_yaml(filepath.replace("$/", config_directory))
 
 
 class ExperimentalProtocol(object):

@@ -14,10 +14,11 @@ from mpi4py import MPI
 from neuron import h
 from numpy.random import default_rng
 from scipy import optimize, signal
+from dmosopt.dmosopt import init_from_h5
 
 from utils import ephys
 from utils.neuron import ic_constant_f, load_template, run_iclamp
-from utils.protocol import ExperimentalProtocol
+from utils.protocol import ExperimentalProtocol, from_config_file
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +48,9 @@ class Motoneurons(Component):
     @property
     def output_filepath(self):
         return self.local_directory("dmosopt.h5")
+
+    def version_protocol(self, filepath: str = "$/motoneuron"):
+        return from_config_file(filepath)
 
     def on_instantiate(self):
         compile_and_load(
@@ -346,6 +350,16 @@ class Motoneurons(Component):
         print(fp)
 
         return fp
+
+    def visual(self):
+        print(
+            init_from_h5(
+                self.output_filepath,
+                None,
+                f"dmosopt_{self.config.protocol['Celltype']}_neuron",
+                None,
+            )
+        )
 
 
 def range_distance(x, lb, ub):
