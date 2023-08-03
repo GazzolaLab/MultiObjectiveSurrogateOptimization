@@ -8,7 +8,7 @@ import numpy as np
 import omegaconf
 from dmosopt import dmosopt
 from machinable import Component
-from machinable.config import Field
+from machinable.config import Field, to_dict
 from miv_simulator.mechanisms import compile_and_load
 from mpi4py import MPI
 from neuron import h
@@ -18,7 +18,7 @@ from dmosopt.dmosopt import init_from_h5
 
 from utils import ephys
 from utils.neuron import ic_constant_f, load_template, run_iclamp
-from utils.protocol import ExperimentalProtocol, from_config_file
+from utils.protocol import ExperimentalProtocol
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,9 +48,6 @@ class Motoneurons(Component):
     @property
     def output_filepath(self):
         return self.local_directory("dmosopt.h5")
-
-    def version_protocol(self, filepath: str = "$/motoneuron"):
-        return from_config_file(filepath)
 
     def on_instantiate(self):
         compile_and_load(
@@ -276,16 +273,7 @@ class Motoneurons(Component):
             dmosopt_params["di_crossover"] = space_sensitivity
             dmosopt_params["di_mutation"] = space_sensitivity
 
-        def _untyped(dict_like):
-            if isinstance(dict_like, (omegaconf.DictConfig, omegaconf.ListConfig)):
-                return omegaconf.OmegaConf.to_container(dict_like)
-            if isinstance(dict_like, (list, tuple)):
-                return dict_like.__class__([k for k in dict_like])
-            if not isinstance(dict_like, dict):
-                return dict_like
-            return {k: _untyped(v) for k, v in dict_like.items()}
-
-        best = dmosopt.run(_untyped(dmosopt_params), verbose=True)
+        best = dmosopt.run(to_dict(dmosopt_params), verbose=True)
 
         self.save_file("best.p", best)
 

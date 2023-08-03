@@ -12,6 +12,7 @@ import h5py
 from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
 from dmosopt.hv import HyperVolume
+from dmosopt import indicators
 
 
 def zdt1(x):
@@ -157,12 +158,19 @@ class Zdt(Component):
 
         return locals()
 
-    def hypervolume(self):
+    def pareto_front(self):
         results = self.results()
-        referencePoint = [11, 11]
-        hv = HyperVolume(referencePoint)
-        front = np.stack((results["best_x"][:, 0], results["best_y"][:, 1])).T
-        return hv.compute(front)
+        return np.stack((results["best_x"][:, 0], results["best_y"][:, 1])).T
+
+    def hypervolume(self, reference):
+        pf = self.pareto_front()
+        indicator = indicators.Hypervolume(ref_point=reference, pf=pf)
+        return indicator.do(pf)
+
+    def igd(self, reference):
+        pf = self.pareto_front()
+        indicator = indicators.IGD(pf=reference)
+        return indicator.do(pf)
 
     def pareto_plot(self):
         results = self.results()
