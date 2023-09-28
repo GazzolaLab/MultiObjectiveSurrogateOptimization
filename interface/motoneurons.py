@@ -229,7 +229,7 @@ class Motoneurons(Component):
 
         # Create an optimizer
         dmosopt_params = {
-            "opt_id": f"dmosopt_{celltype}_neuron",
+            "opt_id": "default",
             "obj_fun_init_name": "make_obj_fun",
             "obj_fun_init_module": self.module,
             "obj_fun_init_args": {
@@ -273,9 +273,7 @@ class Motoneurons(Component):
             dmosopt_params["di_crossover"] = space_sensitivity
             dmosopt_params["di_mutation"] = space_sensitivity
 
-        best = dmosopt.run(to_dict(dmosopt_params), verbose=True)
-
-        self.save_file("best.p", best)
+        dmosopt.run(to_dict(dmosopt_params), verbose=True)
 
     def plot(self):
         import matplotlib.pyplot as plt
@@ -338,16 +336,6 @@ class Motoneurons(Component):
         print(fp)
 
         return fp
-
-    def visual(self):
-        print(
-            init_from_h5(
-                self.output_filepath,
-                None,
-                f"dmosopt_{self.config.protocol['Celltype']}_neuron",
-                None,
-            )
-        )
 
 
 def range_distance(x, lb, ub):

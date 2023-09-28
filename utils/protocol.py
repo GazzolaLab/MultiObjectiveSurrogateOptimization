@@ -19,7 +19,7 @@ def from_yaml(filepath: str):
 
 def from_config_file(filepath: str):
     config_directory = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "simulation", "config", ''
+        os.path.dirname(os.path.dirname(__file__)), "simulation", "config", ""
     )
     return from_yaml(filepath.replace("$/", config_directory))
 

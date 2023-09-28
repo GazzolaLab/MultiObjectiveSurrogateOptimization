@@ -86,7 +86,7 @@ class Zdt(Component):
 
     @property
     def output_filepath(self):
-        return self.local_directory("results.h5")
+        return self.local_directory("dmosopt.h5")
 
     def results(self):
         (

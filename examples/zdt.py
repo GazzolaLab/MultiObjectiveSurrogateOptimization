@@ -6,8 +6,8 @@ y2 = []
 
 for population_size in x:
     zdt = get("interface.zdt", {"population_size": population_size}).launch()
-    hv = zdt.hypervolume([11,11])
-    igd = zdt.igd([11,11])
+    hv = zdt.hypervolume([11, 11])
+    igd = zdt.igd([11, 11])
     y.append(hv)
     y2.append(igd)
 
