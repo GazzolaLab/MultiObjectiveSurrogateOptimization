@@ -38,6 +38,11 @@ class Reservoir(Component):
         ranks_: int = 8
         nodes_: int = 1
 
+    def on_write_meta_data(self):
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        return rank == 0
+
     def config_from_file(self, filename: str) -> Dict:
         return from_yaml(filename)
 

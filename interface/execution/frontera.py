@@ -14,7 +14,9 @@ class Frontera(Execution):
     def on_compute_default_resources(self, executable):
         resources = {}
         resources["-p"] = self.config.partition
-        resources["--nodes"] = executable.config.get("nodes_", self.config.nodes)
+        resources["--nodes"] = executable.config.get(
+            "nodes_", self.config.nodes
+        )
         resources["-t"] = "2:00:00"
         resources["--ntasks-per-node"] = executable.config.get(
             "ranks_", self.config.ranks
@@ -69,7 +71,9 @@ class Frontera(Execution):
 
             if returncode != 0:
                 raise ExecutionFailed(
-                    self.__repr__(), returncode, stdoutput.decode("utf8").strip()
+                    self.__repr__(),
+                    returncode,
+                    stdoutput.decode("utf8").strip(),
                 )
 
             output = stdoutput.decode("utf8").strip()
@@ -79,7 +83,7 @@ class Frontera(Execution):
             except ValueError:
                 job_id = False
             print(
-                f"{output} for component {executable.id} ({executable.local_directory()})"
+                f"{output} for component {executable.id} ({executable.local_directory()}) with output at {resources['--output']}"
             )
 
             # save job information
