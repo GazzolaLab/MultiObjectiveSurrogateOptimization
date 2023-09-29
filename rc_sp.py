@@ -46,9 +46,7 @@ class SpikeTrainPairs(Component):
         distances = [self.config.distance]
 
         g = lambda r: generate_poisson_spike_train(r, self.config.duration)
-        d = lambda a, b: spike_train_distance(
-            a, b, duration=self.config.duration
-        )
+        d = lambda a, b: spike_train_distance(a, b, duration=self.config.duration)
 
         # figure out frequencies for which distances are likely
         m = {t: (0, None) for t in distances}
@@ -82,43 +80,70 @@ class SpikeTrainPairs(Component):
         return self.load_file("data.p", None)
 
 
-data = get(SpikeTrainPairs, {"distance": 0.1}).launch().data()
+# Separation property experiment following Maass et al. 2002 (Figure 2).
 
-
-# simulation
 
 from simulation import microcircuit
 
-# distances: list[float] = [0.1, 0.2, 0.4]
-trials = {}
-with get("interface.execution.local"):
-    for trial in range(1):
-        with get('machinable.scope', {"trial": trial}):
-            trials[trial] = Component.make(
-                "interface.experiment.rc",
-                [
-                    microcircuit.graph.files(),
-                    {
-                        "t_end": 500,
-                        "cell_types": "from_file('simulation/config/cell_types.yml')",
-                        "synapses": "from_file('simulation/config/synapses.yml')",
-                        "stimulus": data[trial][0].tolist(),
-                    },
-                ],
-            ).launch()
-
-
-# x = np.arange(0, 5000, 100)
-# y = x
+spike_trains = {
+    distance: get(SpikeTrainPairs, {"distance": distance}).launch()
+    for distance in [0.1, 0.2, 0.4]
+}
 
 fig = plt.figure()
+# with get("interface.execution.local"):
+with get("interface.execution.frontera", {"partition": "small"}):
+    for distance in [0.0, 0.1, 0.4]:
+        total = 0
+        finished = 0
+        data = spike_trains[
+            distance if distance != 0 else list(spike_trains.keys())[0]
+        ].data()
+        x = []
+        y = []
+        for trial in range(8):  # spike_trains[distance].config.N
+            experiment = {}
+            for u_or_v in range(2):
+                stimulus = data[trial][u_or_v].tolist()
+                context = {}
+                if distance == 0.0:
+                    # use the same stimulus u but with different initialization context
+                    stimulus = data[trial][0].tolist()
+                    context = {"state": u_or_v}
+                with Scope({"trial": trial, **context}):
+                    experiment["u" if u_or_v == 0 else "v"] = e = get(
+                        "interface.experiment.rc",
+                        [
+                            microcircuit.graph.files(),
+                            {
+                                "t_end": 500,
+                                "cell_types": "from_file('simulation/config/cell_types.yml')",
+                                "synapses": "from_file('simulation/config/synapses.yml')",
+                                "stimulus": stimulus,
+                            },
+                        ],
+                    ).launch()
+                    total += 1
+                    if e.cached():
+                        finished += 1
+            u = experiment["u"].readout()
+            v = experiment["v"].readout()
+            if u is None or v is None:
+                continue
+            state_distance = np.abs(u[:, 1] - v[:, 1])
+            x = u[:, 0]
+            y.append(state_distance)
+        print(f"For distance {distance}, found {finished}/{total} cached experiments")
+        if finished != total:
+            continue
+        state_distances = np.array(y)
+        state_distance_avg = y = np.mean(state_distances, axis=0)
+        state_distance_std = error = np.std(state_distances, axis=0)
+        reduced = np.mean(state_distance_avg)
+        plt.plot(x, y, label=f"d(u,v)={distance} (mean={round(reduced, 4)})")
+        # plt.fill_between(x, y - error, y + error)
 
-for trial, experiment in trials.items():
-    r = experiment.readout()
-    plt.plot(r[:, 0], r[:, 1], label=f"Trial {trial}")
-
-plt.legend()
-plt.xlabel("Time [ms]")
-plt.ylabel("State distance")
-
-plt.savefig("plot.png")
+    plt.legend()
+    plt.xlabel("Time [ms]")
+    plt.ylabel("State distance")
+    plt.savefig("plot.png")
