@@ -1,14 +1,15 @@
 from machinable import Component
 import numpy as np
 from pydantic import Field, BaseModel
-from miv_simulator.simulator import runtime, configure_hoc
+from miv_simulator import simulator
 from mpi4py import MPI
 import sys
 from miv_simulator import config
 from miv_simulator.utils import from_yaml
 from typing import Dict, Optional, Union
 import logging
-from miv_simulator.lfp import LFP
+
+# from miv_simulator.lfp import LFP
 from machinable.config import to_dict
 from machinable.utils import load_file
 
@@ -50,8 +51,8 @@ class Reservoir(Component):
         logging.basicConfig(level=logging.INFO)
         np.seterr(all="raise")
 
-        h = configure_hoc(mechanisms_directory=self.config.mechanisms)
-        env = runtime.Env(seed=self.seed)
+        h = simulator.configure_hoc(mechanisms_directory=self.config.mechanisms)
+        env = simulator.ExecutionEnvironment(seed=self.seed)
 
         def log(m):
             if env.rank == 0:
@@ -69,7 +70,7 @@ class Reservoir(Component):
             synapses=self.config.synapses,
         )
 
-        lfp = LFP(
+        lfp = simulator.lfp.LFP(
             "ReadoutElectrode",
             env.pc,
             pop_gid_dict={

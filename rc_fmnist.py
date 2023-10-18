@@ -10,12 +10,8 @@ np.set_printoptions(suppress=True)
 
 from fashion_mnist.utils import mnist_reader
 
-X_train, y_train = mnist_reader.load_mnist(
-    "fashion_mnist/data/fashion", kind="train"
-)
-X_test, y_test = mnist_reader.load_mnist(
-    "fashion_mnist/data/fashion", kind="t10k"
-)
+X_train, y_train = mnist_reader.load_mnist("fashion_mnist/data/fashion", kind="train")
+X_test, y_test = mnist_reader.load_mnist("fashion_mnist/data/fashion", kind="t10k")
 
 
 def binary_problem(X_train, y_train, classes=(0, 1)):
@@ -47,6 +43,7 @@ def encode_batch(images, duration=100, max_rate=200.0, seed=None):
         sequence.append(i * duration + encode(image, duration, max_rate, rng))
     return np.concatenate(sequence)
 
+
 binary = False
 if binary:
     X_train01, y_train01 = binary_problem(X_train, y_train)
@@ -63,9 +60,9 @@ fig = plt.figure()
 with get(
     "interface.execution.frontera",
     {"partition": "normal"},
-    resources={"-t": "4:00:00"},
+    resources={"-t": "2:00:00"},
 ):
-    N = 1000  # 100   or 25
+    N = 25  # 100   or 25
     max_rate = 500
     total = finished = 0
     for duration in [100.0]:
@@ -90,11 +87,11 @@ with get(
                             "cell_types": "from_file('simulation/config/cell_types.yml')",
                             "synapses": "from_file('simulation/config/synapses.yml')",
                             "stimulus": stimulus.tolist(),
-                            "nodes_": 4,
-                            "ranks_": 8,
+                            "nodes_": 32,
+                            "ranks_": 16,
                         },
                     ],
-                )#.launch()
+                ).launch()
 
                 total += 1
                 if e.cached():
@@ -110,7 +107,6 @@ with get(
                 # decode using root mean square
                 readout_rms = np.sqrt(np.mean(readout**2, axis=1))
 
-
                 # tune on first 80%, test on 20%
                 training = int(0.8 * N)
 
@@ -119,9 +115,9 @@ with get(
 
                 baseline = LinearRegression()
                 baseline.fit(X_train01[:training], y_train01[:training])
-                y_pred_baseline = baseline.predict(X_train01[training + 1 :N])
+                y_pred_baseline = baseline.predict(X_train01[training + 1 : N])
                 acc_baseline = accuracy_score(
-                    y_true=y_train01[training + 1 :N], y_pred=to_cat(y_pred_baseline)
+                    y_true=y_train01[training + 1 : N], y_pred=to_cat(y_pred_baseline)
                 )
                 print(f"Baseline accuracy {acc_baseline*100}%")
 
@@ -131,12 +127,11 @@ with get(
                 y_pred01[y_pred01 < 0.5] = 0
                 y_pred01[y_pred01 >= 0.5] = 1
                 acc = accuracy_score(
-                    y_true=y_train01[training + 1 :N], y_pred=to_cat(y_pred01)
+                    y_true=y_train01[training + 1 : N], y_pred=to_cat(y_pred01)
                 )
                 print(
                     f"Accuracy on {N - training} samples: {acc*100}% (trained on {training})"
                 )
-                
 
     print(f"Found {finished}/{total} cached experiments")
     # if finished != total:

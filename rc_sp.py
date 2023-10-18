@@ -46,9 +46,7 @@ class SpikeTrainPairs(Component):
         distances = [self.config.distance]
 
         g = lambda r: generate_poisson_spike_train(r, self.config.duration)
-        d = lambda a, b: spike_train_distance(
-            a, b, duration=self.config.duration
-        )
+        d = lambda a, b: spike_train_distance(a, b, duration=self.config.duration)
 
         # figure out frequencies for which distances are likely
         m = {t: (0, None) for t in distances}
@@ -124,7 +122,7 @@ with get("interface.execution.frontera", {"partition": "small"}):
                                 "stimulus": stimulus,
                             },
                         ],
-                    )  # .launch()
+                    ).launch()
                     total += 1
                     if e.cached():
                         finished += 1
@@ -135,17 +133,14 @@ with get("interface.execution.frontera", {"partition": "small"}):
             state_distance = np.abs(u[:, 1] - v[:, 1])
             x = u[:, 0]
             y.append(state_distance)
-        print(
-            f"For distance {distance}, found {finished}/{total} cached experiments"
-        )
+        print(f"For distance {distance}, found {finished}/{total} cached experiments")
         if finished != total:
             continue
         state_distances = np.array(y)
         state_distance_avg = y = np.mean(state_distances, axis=0)
         state_distance_std = error = np.std(state_distances, axis=0)
         reduced = np.mean(state_distance_avg)
-        q = 1
-        plt.plot(x[::q], y[::q], label=f"d(u,v)={distance} (mean={round(reduced, 4)})")
+        plt.plot(x, y, label=f"d(u,v)={distance} (mean={round(reduced, 4)})")
         # plt.fill_between(x, y - error, y + error)
 
     plt.legend(loc="upper right")
