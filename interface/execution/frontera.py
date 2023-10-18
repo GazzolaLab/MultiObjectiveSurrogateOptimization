@@ -1,3 +1,4 @@
+import sys
 import subprocess
 
 from machinable import Execution
@@ -10,6 +11,7 @@ class Frontera(Execution):
         nodes: int = 1
         ranks: int = 1
         partition: str = "development"
+        confirm: bool = True
 
     def on_compute_default_resources(self, executable):
         resources = {}
@@ -21,6 +23,14 @@ class Frontera(Execution):
         )
 
         return resources
+
+    def on_before_dispatch(self):
+        if self.config.confirm:
+            sys.stdout.write(
+                f"Submitting {len(self.pending_executables)} jobs ({len(self.executables)} total). Proceed? [Y/n]: "
+            )
+            choice = input().lower()
+            return {"": True, "yes": True, "y": True, "no": False, "n": False}[choice]
 
     def __call__(self):
         script = "#!/usr/bin/env bash\n"
@@ -69,7 +79,9 @@ class Frontera(Execution):
 
             if returncode != 0:
                 raise ExecutionFailed(
-                    self.__repr__(), returncode, stdoutput.decode("utf8").strip()
+                    self.__repr__(),
+                    returncode,
+                    stdoutput.decode("utf8").strip(),
                 )
 
             output = stdoutput.decode("utf8").strip()
@@ -79,7 +91,7 @@ class Frontera(Execution):
             except ValueError:
                 job_id = False
             print(
-                f"{output} for component {executable.id} ({executable.local_directory()})"
+                f"{output} for component {executable.id} ({executable.local_directory()}) with output at {resources['--output']}"
             )
 
             # save job information
