@@ -2,7 +2,9 @@ from machinable import Component
 import numpy as np
 from pydantic import Field, BaseModel
 from miv_simulator import simulator
+from miv_simulator.lfp import LFP
 from mpi4py import MPI
+from typing import List
 import sys
 from miv_simulator import config
 from miv_simulator.utils import from_yaml
@@ -28,7 +30,7 @@ sys.excepthook = mpi_excepthook
 
 class Reservoir(Component):
     class Config(BaseModel):
-        stimulus: Optional[Union[str, list[float]]] = None
+        stimulus: Optional[Union[str, List[float]]] = None
         t_end: float = 1000
         cells: str = Field("???")
         connections: str = Field("???")
@@ -70,7 +72,7 @@ class Reservoir(Component):
             synapses=self.config.synapses,
         )
 
-        lfp = simulator.lfp.LFP(
+        lfp = LFP(
             "ReadoutElectrode",
             env.pc,
             pop_gid_dict={
