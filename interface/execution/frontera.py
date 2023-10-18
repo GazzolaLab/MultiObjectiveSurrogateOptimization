@@ -1,3 +1,4 @@
+import sys
 import subprocess
 
 from machinable import Execution
@@ -10,19 +11,26 @@ class Frontera(Execution):
         nodes: int = 1
         ranks: int = 1
         partition: str = "development"
+        confirm: bool = True
 
     def on_compute_default_resources(self, executable):
         resources = {}
         resources["-p"] = self.config.partition
-        resources["--nodes"] = executable.config.get(
-            "nodes_", self.config.nodes
-        )
+        resources["--nodes"] = executable.config.get("nodes_", self.config.nodes)
         resources["-t"] = "2:00:00"
         resources["--ntasks-per-node"] = executable.config.get(
             "ranks_", self.config.ranks
         )
 
         return resources
+
+    def on_before_dispatch(self):
+        if self.config.confirm:
+            sys.stdout.write(
+                f"Submitting {len(self.pending_executables)} jobs ({len(self.executables)} total). Proceed? [Y/n]: "
+            )
+            choice = input().lower()
+            return {"": True, "yes": True, "y": True, "no": False, "n": False}[choice]
 
     def __call__(self):
         script = "#!/usr/bin/env bash\n"
