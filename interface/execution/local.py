@@ -7,12 +7,18 @@ from dataclasses import dataclass
 
 from machinable import Execution
 from machinable import errors
+from interface.execution.frontera import confirm
 
 
 class LocalExecution(Execution):
     @dataclass
     class Config:
         mpi: str = "mpirun"
+        confirm: bool = False
+
+    def on_before_dispatch(self):
+        if self.config.confirm:
+            return confirm(self)
 
     def __call__(self):
         for executable in self.pending_executables:
@@ -30,6 +36,7 @@ class LocalExecution(Execution):
                     str(executable.config.ranks_),
                     script_file,
                 ]
+                print(" ".join(cmd))
                 # capture output to file and stream it
                 with open(executable.local_directory("output.log"), "wb") as f:
                     p = subprocess.Popen(

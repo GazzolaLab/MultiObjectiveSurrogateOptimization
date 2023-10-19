@@ -5,6 +5,14 @@ from machinable import Execution
 from machinable.errors import ExecutionFailed
 
 
+def confirm(execution: Execution) -> bool:
+    sys.stdout.write(
+        f"Submitting {len(execution.pending_executables)} jobs ({len(execution.executables)} total). Proceed? [Y/n]: "
+    )
+    choice = input().lower()
+    return {"": True, "yes": True, "y": True, "no": False, "n": False}[choice]
+
+
 class Frontera(Execution):
     class Config:
         mpi: str = "ibrun"
@@ -26,11 +34,7 @@ class Frontera(Execution):
 
     def on_before_dispatch(self):
         if self.config.confirm:
-            sys.stdout.write(
-                f"Submitting {len(self.pending_executables)} jobs ({len(self.executables)} total). Proceed? [Y/n]: "
-            )
-            choice = input().lower()
-            return {"": True, "yes": True, "y": True, "no": False, "n": False}[choice]
+            return confirm(self)
 
     def __call__(self):
         script = "#!/usr/bin/env bash\n"
