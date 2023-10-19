@@ -51,7 +51,7 @@ else:
     X_train01, y_train01 = X_train, y_train
 
 
-from simulation import microcircuit
+from MultiObjectiveSurrogateOptimization.simulation import culture
 
 fig = plt.figure()
 
@@ -81,7 +81,7 @@ with get(
                 e = get(
                     "interface.experiment.rc",
                     [
-                        microcircuit.graph.files(),
+                        culture.graph.files(),
                         {
                             "t_end": duration * N,
                             "cell_types": "from_file('simulation/config/cell_types.yml')",

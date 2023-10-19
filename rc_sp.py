@@ -4,6 +4,8 @@ from miv_simulator import coding
 from pydantic import BaseModel
 from matplotlib import pyplot as plt
 from collections import defaultdict
+from simulation import culture
+
 
 np.set_printoptions(suppress=True)
 
@@ -83,68 +85,64 @@ class SpikeTrainPairs(Component):
 # Separation property experiment following Maass et al. 2002 (Figure 2).
 
 
-from simulation import microcircuit
-
 spike_trains = {
     distance: get(SpikeTrainPairs, {"distance": distance}).launch()
     for distance in [0.1, 0.2, 0.4]
 }
 
 fig = plt.figure()
-# with get("interface.execution.local"):
-with get("interface.execution.frontera", {"partition": "small"}):
-    for distance in [0.0, 0.1, 0.2, 0.4]:
-        total = 0
-        finished = 0
-        data = spike_trains[
-            distance if distance != 0 else list(spike_trains.keys())[0]
-        ].data()
-        x = []
-        y = []
-        for trial in range(10):  # spike_trains[distance].config.N
-            experiment = {}
-            for u_or_v in range(2):
-                stimulus = data[trial][u_or_v].tolist()
-                context = {}
-                if distance == 0.0:
-                    # use the same stimulus u but with different initialization context
-                    stimulus = data[trial][0].tolist()
-                    context = {"state": u_or_v}
-                with Scope({"trial": trial, **context}):
-                    experiment["u" if u_or_v == 0 else "v"] = e = get(
-                        "interface.experiment.rc",
-                        [
-                            microcircuit.graph.files(),
-                            {
-                                "t_end": 500,
-                                "cell_types": "from_file('simulation/config/cell_types.yml')",
-                                "synapses": "from_file('simulation/config/synapses.yml')",
-                                "stimulus": stimulus,
-                            },
-                        ],
-                    ).launch()
-                    total += 1
-                    if e.cached():
-                        finished += 1
-            u = experiment["u"].readout()
-            v = experiment["v"].readout()
-            if u is None or v is None:
-                continue
-            state_distance = np.abs(u[:, 1] - v[:, 1])
-            x = u[:, 0]
-            y.append(state_distance)
-        print(f"For distance {distance}, found {finished}/{total} cached experiments")
-        if finished != total:
+for distance in [0.0, 0.1, 0.2, 0.4]:
+    total = 0
+    finished = 0
+    data = spike_trains[
+        distance if distance != 0 else list(spike_trains.keys())[0]
+    ].data()
+    x = []
+    y = []
+    for trial in range(10):  # spike_trains[distance].config.N
+        experiment = {}
+        for u_or_v in range(2):
+            stimulus = data[trial][u_or_v].tolist()
+            context = {}
+            if distance == 0.0:
+                # use the same stimulus u but with different initialization context
+                stimulus = data[trial][0].tolist()
+                context = {"state": u_or_v}
+            with Scope({"trial": trial, **context}):
+                experiment["u" if u_or_v == 0 else "v"] = e = get(
+                    "interface.experiment.rc",
+                    [
+                        culture.motoneurons().files(),
+                        {
+                            "t_end": 500,
+                            "cell_types": "from_file('simulation/config/cell_types.yml')",
+                            "synapses": "from_file('simulation/config/synapses.yml')",
+                            "stimulus": stimulus,
+                        },
+                    ],
+                ).launch()
+                total += 1
+                if e.cached():
+                    finished += 1
+        u = experiment["u"].readout()
+        v = experiment["v"].readout()
+        if u is None or v is None:
             continue
-        state_distances = np.array(y)
-        state_distance_avg = y = np.mean(state_distances, axis=0)
-        state_distance_std = error = np.std(state_distances, axis=0)
-        reduced = np.mean(state_distance_avg)
-        plt.plot(x, y, label=f"d(u,v)={distance} (mean={round(reduced, 4)})")
-        # plt.fill_between(x, y - error, y + error)
+        state_distance = np.abs(u[:, 1] - v[:, 1])
+        x = u[:, 0]
+        y.append(state_distance)
+    print(f"For distance {distance}, found {finished}/{total} cached experiments")
+    if finished != total:
+        continue
+    state_distances = np.array(y)
+    state_distance_avg = y = np.mean(state_distances, axis=0)
+    state_distance_std = error = np.std(state_distances, axis=0)
+    reduced = np.mean(state_distance_avg)
+    plt.plot(x, y, label=f"d(u,v)={distance} (mean={round(reduced, 4)})")
+    # plt.fill_between(x, y - error, y + error)
 
-    plt.legend(loc="upper right")
-    plt.title(f"N={trial+1}")
-    plt.xlabel("Time [ms]")
-    plt.ylabel("State distance")
-    plt.savefig("plot.png")
+plt.legend(loc="upper right")
+plt.title(f"N={trial+1}")
+plt.xlabel("Time [ms]")
+plt.ylabel("State distance")
+plt.savefig("plot.png")
