@@ -38,8 +38,7 @@ class Reservoir(Component):
         synapses: config.Synapses = Field("???")
         templates: str = "./simulation/templates"
         mechanisms: str = "./simulation/mechanisms"
-        ranks_: int = 8
-        nodes_: int = 1
+        ranks: int = 8
 
     def on_write_meta_data(self):
         comm = MPI.COMM_WORLD
