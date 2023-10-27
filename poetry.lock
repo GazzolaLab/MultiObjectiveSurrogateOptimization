@@ -580,14 +580,14 @@ files = [
 
 [[package]]
 name = "machinable"
-version = "4.6.2"
+version = "4.6.3"
 description = "A modular configuration system for research projects"
 category = "main"
 optional = false
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "machinable-4.6.2-py3-none-any.whl", hash = "sha256:d804af4fce824b302557c13d09e40c34ec94be933b541b80050c3b10e3306559"},
-    {file = "machinable-4.6.2.tar.gz", hash = "sha256:6260367ba4fc1a7fbcd7a8288e629e32c71d6a1311b6e78987d3122813b6b68a"},
+    {file = "machinable-4.6.3-py3-none-any.whl", hash = "sha256:c78111062f67c580413ef4966e0ee4d842e304f58f85d4c54b1e7d33111aae0e"},
+    {file = "machinable-4.6.3.tar.gz", hash = "sha256:877cd1f08fd0a21c3c9c17dea6d3f7ddf2ae12c783c871ca87f58bceec9290aa"},
 ]
 
 [package.dependencies]
@@ -683,7 +683,7 @@ sympy = "^1.10.1"
 type = "git"
 url = "https://github.com/GazzolaLab/MiV-Simulator.git"
 reference = "main"
-resolved_reference = "9815199b46b331809f0c9f141f9b4e11414eca70"
+resolved_reference = "1a1bb086d7ea8e8c2eb6b2ce54d5a76384792541"
 
 [[package]]
 name = "mpi4py"
