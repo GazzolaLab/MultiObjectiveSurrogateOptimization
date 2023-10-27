@@ -16,7 +16,12 @@ def confirm(execution: Execution) -> bool:
     sys.stdout.write(
         f"Submitting {len(execution.pending_executables)} jobs ({len(execution.executables)} total). Proceed? [Y/n]: "
     )
-    return yes_or_no()
+    if yes_or_no():
+        sys.stdout.write("yes\n")
+        return True
+    else:
+        sys.stdout.write("no\n")
+        return False
 
 
 class Job:
@@ -176,14 +181,10 @@ class Slurm(Execution):
 
             returncode = process.returncode
 
-            if returncode != 0:
-                raise ExecutionFailed(
-                    self.__repr__(),
-                    returncode,
-                    stdoutput.decode("utf8").strip(),
-                )
-
             output = stdoutput.decode("utf8").strip()
+
+            if returncode != 0:
+                raise ExecutionFailed(output)
 
             try:
                 job_id = int(output.rsplit(" ", maxsplit=1)[-1])
