@@ -20,10 +20,14 @@ class Optimize(Component):
         verbose: bool = True
 
     def __call__(self) -> None:
-        dmosopt.run(to_dict(self.config.optimizer), verbose=self.config.verbose)
+        params = to_dict(self.config.optimizer)
+        if "file_path" not in params:
+            params["file_path"] = self.output_filepath
+        dmosopt.run(params, verbose=self.config.verbose)
 
-    def config_output_filepath(self, name="dmosopt.h5") -> str:
-        return self.local_directory(name)
+    @property
+    def output_filepath(self) -> str:
+        return self.local_directory("dmosopt.h5")
 
     def results(self):
         (
@@ -39,13 +43,11 @@ class Optimize(Component):
             constraint_names,
             problem_parameters,
             problem_ids,
-        ) = init_from_h5(
-            self.optimizer.config.file_path, None, self.config.optimizer.opt_id, None
-        )
+        ) = init_from_h5(self.output_filepath, None, self.config.optimizer.opt_id, None)
 
         problem_id = 0
 
-        with h5py.File(self.optimizer.config.file_path, "r") as f:
+        with h5py.File(self.output_filepath, "r") as f:
             # metadata = f[f'/{self.config.optimizer.opt_id}/metadata'][:]
             predictions = f[f"{self.config.optimizer.opt_id}/{problem_id}/predictions"][
                 :
