@@ -1,92 +1,29 @@
 from machinable import Component
-
-import sys, logging
-import numpy as np
+from mpi4py import MPI
+from pydantic import BaseModel, Field
 from dmosopt import dmosopt
-from dataclasses import dataclass
-import matplotlib.pyplot as plt
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 import h5py
 from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
 from dmosopt.hv import HyperVolume
 from dmosopt import indicators
+import matplotlib.pyplot as plt
+import numpy as np
+from machinable.config import to_dict
+
+OptimizerParameters = dict
 
 
-def zdt1(x):
-    """This is the Zitzler-Deb-Thiele Function - type A
-    Bound: XUB = [1,1,...]; XLB = [0,0,...]
-    dim = 30
-    """
-    num_variables = len(x)
-    f = np.zeros(2)
-    f[0] = x[0]
-    g = 1.0 + 9.0 / float(num_variables - 1) * np.sum(x[1:])
-    h = 1.0 - np.sqrt(f[0] / g)
-    f[1] = g * h
-    return f
+class Optimize(Component):
+    class Config(BaseModel):
+        optimizer: OptimizerParameters = Field("???")
+        verbose: bool = True
 
+    def __call__(self) -> None:
+        dmosopt.run(to_dict(self.config.optimizer), verbose=self.config.verbose)
 
-def obj_fun(pp):
-    """Objective function to be minimized."""
-    param_values = np.asarray([pp[k] for k in sorted(pp)])
-    res = zdt1(param_values)
-    logger.info(f"Iter: \t pp:{pp}, result:{res}")
-    return res
-
-
-def zdt1_pareto(n_points=100):
-    f = np.zeros([n_points, 2])
-    f[:, 0] = np.linspace(0, 1, n_points)
-    f[:, 1] = 1.0 - np.sqrt(f[:, 0])
-    return f
-
-
-class Zdt(Component):
-    @dataclass
-    class Config:
-        population_size: int = 200
-        num_generations: int = 100
-        n_epochs: int = 4
-
-    def __call__(self):
-        space = {}
-        for i in range(30):
-            space["x%d" % (i + 1)] = [0.0, 1.0]
-        problem_parameters = {}
-        objective_names = ["y1", "y2"]
-
-        # Create an optimizer
-        dmosopt_params = {
-            "opt_id": self.opt_id,
-            "obj_fun_name": "obj_fun",
-            "obj_fun_module": self.module,
-            "problem_parameters": problem_parameters,
-            "space": space,
-            "objective_names": objective_names,
-            "population_size": self.config.population_size,
-            "num_generations": self.config.num_generations,
-            "initial_maxiter": 10,
-            "optimizer": "age",
-            "termination_conditions": True,
-            "n_initial": 3,
-            "n_epochs": self.config.n_epochs,
-            "save_surrogate_eval": True,
-            "save": True,
-            "file_path": self.output_filepath,
-        }
-
-        dmosopt.run(dmosopt_params, verbose=True)
-
-    @property
-    def opt_id(self):
-        return "dmosopt"
-
-    @property
-    def output_filepath(self):
-        return self.local_directory("dmosopt.h5")
+    def config_output_filepath(self, name="dmosopt.h5") -> str:
+        return self.local_directory(name)
 
     def results(self):
         (
@@ -102,15 +39,19 @@ class Zdt(Component):
             constraint_names,
             problem_parameters,
             problem_ids,
-        ) = init_from_h5(self.output_filepath, None, self.opt_id, None)
+        ) = init_from_h5(
+            self.optimizer.config.file_path, None, self.config.optimizer.opt_id, None
+        )
 
         problem_id = 0
 
-        with h5py.File(self.output_filepath, "r") as f:
-            # metadata = f[f'/{self.opt_id}/metadata'][:]
-            predictions = f[f"{self.opt_id}/{problem_id}/predictions"][:]
-            objectives = f[f"{self.opt_id}/{problem_id}/objectives"][:]
-            epochs = f[f"/{self.opt_id}/{problem_id}/epochs"][:]
+        with h5py.File(self.optimizer.config.file_path, "r") as f:
+            # metadata = f[f'/{self.config.optimizer.opt_id}/metadata'][:]
+            predictions = f[f"{self.config.optimizer.opt_id}/{problem_id}/predictions"][
+                :
+            ]
+            objectives = f[f"{self.config.optimizer.opt_id}/{problem_id}/objectives"][:]
+            epochs = f[f"/{self.config.optimizer.opt_id}/{problem_id}/epochs"][:]
 
         old_eval_epochs = [e.epoch for e in old_evals[problem_id]]
         old_eval_xs = [e.parameters for e in old_evals[problem_id]]
@@ -179,6 +120,15 @@ class Zdt(Component):
         plt.plot(y[:, 0], y[:, 1], "b.", label="evaluated points")
         plt.plot(best_x[:, 0], best_y[:, 1], "r.", label="best points")
 
+        def zdt1_pareto(n_points=100):
+            f = np.zeros([n_points, 2])
+            f[:, 0] = np.linspace(0, 1, n_points)
+            f[:, 1] = 1.0 - np.sqrt(f[:, 0])
+            return f
+
         y_true = zdt1_pareto()
         plt.plot(y_true[:, 0], y_true[:, 1], "k-", label="True Pareto")
         plt.legend()
+
+    def on_write_meta_data(self):
+        return MPI.COMM_WORLD.Get_rank() == 0
