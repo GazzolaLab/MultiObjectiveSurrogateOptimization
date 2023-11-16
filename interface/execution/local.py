@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from machinable import Execution
 from machinable import errors
-from interface.execution.frontera import confirm
+from interface.execution.slurm import confirm
 
 
 class LocalExecution(Execution):
@@ -15,6 +15,7 @@ class LocalExecution(Execution):
     class Config:
         mpi: str = "mpirun"
         confirm: bool = False
+        ranks: int = 0
 
     def on_before_dispatch(self):
         if self.config.confirm:
@@ -22,7 +23,8 @@ class LocalExecution(Execution):
 
     def __call__(self):
         for executable in self.pending_executables:
-            if executable.config.get("ranks_", 0) > 0:
+            ranks = executable.config.get("ranks", self.config.ranks)
+            if ranks > 0:
                 # run using MPI
                 script_file = self.save_file(
                     f"mpi-{executable.id}.sh",
@@ -33,7 +35,7 @@ class LocalExecution(Execution):
                 cmd = [
                     shutil.which(self.config.mpi),
                     "-n",
-                    str(executable.config.ranks_),
+                    str(ranks),
                     script_file,
                 ]
                 print(" ".join(cmd))

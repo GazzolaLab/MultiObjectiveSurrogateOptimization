@@ -1,5 +1,5 @@
 compiled/
-/storage/
+storage/
 *.sqlite
 
 # Byte-compiled / optimized / DLL files

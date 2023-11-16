@@ -13,8 +13,9 @@ def yes_or_no() -> bool:
 
 
 def confirm(execution: Execution) -> bool:
+    sys.stdout.write("\n".join(execution.pending_executables.map(lambda x: x.module)))
     sys.stdout.write(
-        f"Submitting {len(execution.pending_executables)} jobs ({len(execution.executables)} total). Proceed? [Y/n]: "
+        f"\nSubmitting {len(execution.pending_executables)} jobs ({len(execution.executables)} total). Proceed? [Y/n]: "
     )
     if yes_or_no():
         sys.stdout.write("yes\n")
