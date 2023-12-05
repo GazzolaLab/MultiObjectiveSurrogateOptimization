@@ -2,13 +2,15 @@ from machinable import Component
 from mpi4py import MPI
 from pydantic import BaseModel, Field, field_validator, TypeAdapter
 from dmosopt import dmosopt
+from dmosopt import config
 from machinable.config import to_dict
 from typing import Dict, Optional, List, Callable, Literal, Set, Any, Union, Tuple
 import copy
 
+
 class Dmosopt(Component):
     class Config(BaseModel):
-        sopt_params: Dict = Field("???")
+        dopt_params: Dict = Field("???")
         time_limit: Optional[int] = None
         feasible: bool = True
         return_features: bool = False
@@ -22,85 +24,128 @@ class Dmosopt(Component):
         collective_mode: Literal["gather", "sendrecv"] = "gather"
         verbose: bool = True
         worker_debug: bool = False
-        
-        @field_validator('sopt_params')
+
+        @field_validator("dopt_params", mode="before")
         @classmethod
         def valid_optimization_settings(cls, params: Dict) -> Dict:
             _t = {
-                'opt_id': str,
-                'obj_fun_name': Optional[str],
-                'obj_fun_module': str,
-                'obj_fun_init_name': Optional[str],
-                'obj_fun_init_args': Dict,
-                'controller_init_fun_module': str,
-                'controller_init_fun_name': Optional[str],
-                'controller_init_fun_args': Dict,
-                'reduce_fun_module': str,
-                'reduce_fun_name': Optional[str],
-                'reduce_fun_args': Dict,
-                'broker_fun_name': Optional[str],
-                'broker_module_name': Optional[str],
+                "opt_id": str,
+                "obj_fun_name": Optional[str],
+                "obj_fun_init_name": Optional[str],
+                "obj_fun_init_args": Dict,
+                "controller_init_fun_name": Optional[str],
+                "controller_init_fun_args": Dict,
+                "reduce_fun_name": Optional[str],
+                "reduce_fun_args": Dict,
+                "broker_fun_name": Optional[str],
+                "broker_module_name": Optional[str],
                 # DistOptimizer
-                'objective_names': List[str],
-                'feature_dtypes': List[Tuple[str, Any]],
-                'constraint_names': List[str],
-                'n_initial': int,
-                'initial_maxiter': int,
-                'initial_method': Union[
-                    Callable, Literal['glp', 'slh', 'lh', 'mc', 'sobol'], Dict[str, Any]
+                "objective_names": List[str],
+                "feature_dtypes": List[Tuple[str, Any]],
+                "constraint_names": List[str],
+                "n_initial": int,
+                "initial_maxiter": int,
+                "initial_method": Union[
+                    Callable,
+                    Literal["glp", "slh", "lh", "mc", "sobol"],
+                    Dict[str, Any],
+                    str,
                 ],
-                'verbose': bool,
-                'problem_ids': Optional[Set],
-                'problem_parameters': Optional[Dict],
-                'space': Optional[Dict[str, Tuple[Union[int, float], Union[int, float]]]],
-                'population_size': int,
-                'num_generations': int,
-                'resample_fraction': float,
-                'distance_metric': Any, #
-                'n_epochs': int,
-                'save_eval': bool,
-                'file_path': Optional[str],
-                'save': bool,
-                'save_surrogate_evals': bool,
-                'save_optimizer_params': bool,
-                'metadata': Any,
-                'surrogate_method': Literal['gpr', 'egp', 'megp', 'mdgp', 'mdspp', 'vgp', 'svgp', 'spv', 'siv', 'crv'],
-                'surrogate_options': Dict,
-                'optimizer': Literal['nsga2', 'age', 'smpso', 'cmaes'],
-                'optimizer_options': Dict,
-                'sensitivity_method': Literal['dgsm', 'fast'],
-                'sensitivity_options': Dict,
-                'local_random': Any,
-                'random_seed': Optional[int],
-                'feasibility_model': bool,
-                'termination_conditions': Optional[Dict],
-                # 
-                'di_crossover': Any, #
-                'di_mutation': Any, #
+                "verbose": bool,
+                "problem_ids": Optional[Set],
+                "problem_parameters": Optional[Dict],
+                "space": Optional[
+                    Dict[str, Tuple[Union[int, float], Union[int, float]]]
+                ],
+                "population_size": int,
+                "num_generations": int,
+                "resample_fraction": float,
+                "distance_metric": Union[Callable, Literal["crowding", "euclidean"]],
+                "n_epochs": int,
+                "save_eval": bool,
+                "file_path": Optional[str],
+                "save": bool,
+                "save_surrogate_evals": bool,
+                "save_optimizer_params": bool,
+                "metadata": Any,
+                "surrogate_method": Union[
+                    str,
+                    Literal[
+                        "gpr",
+                        "egp",
+                        "megp",
+                        "mdgp",
+                        "mdspp",
+                        "vgp",
+                        "svgp",
+                        "spv",
+                        "siv",
+                        "crv",
+                    ],
+                ],
+                "surrogate_method_kwargs": Dict,
+                "optimizer": Literal["nsga2", "age", "smpso", "cmaes"],
+                "optimizer_kwargs": Dict,
+                "sensitivity_method": Literal["dgsm", "fast"],
+                "sensitivity_method_kwargs": Dict,
+                "local_random": Any,
+                "random_seed": Optional[int],
+                "feasibility_model": bool,
+                "termination_conditions": Optional[Dict],
+                #
+                "di_crossover": Any,  #
+                "di_mutation": Any,  #
             }
-            
+
             payload = copy.deepcopy(to_dict(params))
-            
             for k, v in payload.items():
                 if k not in _t:
                     raise ValueError(f"Invalid option: {k}")
-                TypeAdapter(_t[k]).validate_python(v)
-                
+                try:
+                    TypeAdapter(_t[k]).validate_python(v)
+                except Exception as _ex:
+                    raise ValueError(f"Invalid type for '{k}'") from _ex
+
             # additional rules
-            if (payload.get('random_seed', None) is not None) and (payload.get('local_random', None) is not None):
+            if (payload.get("random_seed", None) is not None) and (
+                payload.get("local_random", None) is not None
+            ):
                 raise ValueError(
                     "Both random_seed and local_random are specified! Only one or the other must be specified."
                 )
-                
+
+            # validate imports eagerly
+            for path, alias in [
+                ("obj_fun_name", {}),
+                ("obj_fun_init_name", {}),
+                ("controller_init_fun_name", {}),
+                ("reduce_fun_name", {}),
+                ("broker_fun_name", {}),
+                ("initial_method", config.default_sampling_methods),
+                ("surrogate_method", config.default_surrogate_methods),
+                ("optimizer", config.default_optimizers),
+                ("sensitivity_method", config.default_sa_methods),
+            ]:
+                if isinstance(target := payload.get(path, None), str):
+                    if target in alias:
+                        target = alias[target]
+                    try:
+                        config.import_object_by_path(target)
+                    except Exception as _ex:
+                        raise ValueError(
+                            f"Could not resolve import path '{target}' for '{path}'"
+                        ) from _ex
+
             return payload
-        
 
     def __call__(self) -> None:
-        params = to_dict(self.config.sopt_params)
+        params = to_dict(self.config.dopt_params)
         if "file_path" not in params:
             params["file_path"] = self.output_filepath
+        if "local_random" not in params and "random_seed" not in params:
+            params["random_seed"] = self.seed
         dmosopt.run(
-            sopt_params=params,
+            dopt_params=params,
             time_limit=self.config.time_limit,
             feasible=self.config.feasible,
             return_features=self.config.return_features,
