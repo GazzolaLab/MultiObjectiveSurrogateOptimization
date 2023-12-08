@@ -5,6 +5,7 @@ from functools import partial
 import logging
 from typing import Literal
 import ephys_utils as ephys
+from miv_simulator.mechanisms import compile_and_load
 
 try:
     import dmosopt_MN_nrn
@@ -26,21 +27,69 @@ from neuron_utils import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+N_exp = len([20, 30, 40, 50, 60, 70, 80])
+
+feature_dtypes = [
+    (
+        "ic_constant_hold",
+        np.float32,
+    ),
+    (
+        "ic_constant_rest",
+        np.float32,
+    ),
+    (
+        "initial_v_error_hold",
+        np.float32,
+    ),
+    (
+        "rn",
+        np.float32,
+    ),
+    (
+        "tau",
+        np.float32,
+    ),
+    ("fI", np.dtype([("frequency", float)]), N_exp),
+    ("mean_fI_diff", np.float32),
+    (
+        "ISI",
+        np.dtype(
+            [
+                ("first", float),
+                ("last", float),
+                ("ratio", float),
+                ("mean", float),
+                ("std", float),
+                ("N", int),
+            ]
+        ),
+        N_exp,
+    ),
+    ("threshold", np.float32, N_exp),
+    ("spike_amplitude", np.float32, N_exp),
+]
+
 
 def make_obj_fun(template_name, **kwargs):
-    load_template(template_name)
-
     return partial(obj_fun, template_name=template_name, **kwargs)
 
 
 def obj_fun(
     parameters,
-    feature_dtypes,
     template_name: str = "rn",
     v_hold: float = -60,
     v_rest: float = -57.4,
     rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
+    worker=None,
 ):
+    if worker:
+        print("Worker: {worker}")
+
+    compile_and_load(f"{SOURCE}/mechanisms")
+
+    load_template(template_name, template_file=f"{SOURCE}/{template_name}.hoc")
+
     template = getattr(h, template_name)
 
     cell = dmosopt_MN_nrn.init_cell(template_name, parameters, v_hold=v_hold)

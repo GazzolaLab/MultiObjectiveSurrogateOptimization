@@ -2,62 +2,20 @@
 # # Motoneurons
 #
 #
-
 # %%
+import os
 from machinable import get
 
-import numpy as np
+get("machinable.index", os.environ["STORAGE"]).__enter__()
 
-N_exp = len([20, 30, 40, 50, 60, 70, 80])
-
-feature_dtypes = [
-    (
-        "ic_constant_hold",
-        np.float32,
-    ),
-    (
-        "ic_constant_rest",
-        np.float32,
-    ),
-    (
-        "initial_v_error_hold",
-        np.float32,
-    ),
-    (
-        "rn",
-        np.float32,
-    ),
-    (
-        "tau",
-        np.float32,
-    ),
-    ("fI", np.dtype([("frequency", float)]), N_exp),
-    ("mean_fI_diff", np.float32),
-    (
-        "ISI",
-        np.dtype(
-            [
-                ("first", float),
-                ("last", float),
-                ("ratio", float),
-                ("mean", float),
-                ("std", float),
-                ("N", int),
-            ]
-        ),
-        N_exp,
-    ),
-    ("threshold", np.float32, N_exp),
-    ("spike_amplitude", np.float32, N_exp),
-]
+# %%
 
 defaults = {
-    "optimizer": {
+    "dopt_params": {
         "opt_id": "default",
-        "obj_fun_init_name": "make_obj_fun",
+        "obj_fun_init_name": "benchmarks.mn.make_obj_fun",
         "obj_fun_init_args": {
             "template_name": "MN_nrn",
-            "feature_dtypes": feature_dtypes,
         },
         "problem_parameters": {
             "soma_f_Caconc": 0.004,
@@ -102,28 +60,27 @@ defaults = {
             "pre_spk_count",
             "initial_v_constr",
         ],
-        "feature_dtypes": feature_dtypes,
+        "feature_dtypes": "benchmarks.mn.feature_dtypes",
         "optimizer": "nsga2",
-        "optimizer_options": {"sampling_method": "sobol"},
-        "n_initial": 800,
-        "n_epochs": 10,
-        "population_size": 400,
+        "optimizer_kwargs": {"sampling_method": "sobol"},
+        "n_initial": 2000,
+        "n_epochs": 3,
+        "population_size": 1000,
         "num_generations": 400,
-        "termination_conditions": True,
         "resample_fraction": 1.0,
         "initial_maxiter": 10,
         "initial_method": "slh",
-        "surrogate_method": "gpr",
-        "surrogate_options": {
+        "surrogate_method": "gpr",  # "gpr", # megp , gpr, None
+        "surrogate_method_kwargs": {
             "lengthscale_bounds": (1e-5, 100.0),
             "batch_size": 100,
             "n_iter": 30000,
             "min_elbo_pct_change": 1.0,
-            "cuda": False,
+            "cuda": True,
         },
         "feasibility_model": False,
         "save": True,
-        "save_surrogate_eval": False,
+        "save_surrogate_evals": False,
     }
 }
 
@@ -131,9 +88,22 @@ defaults = {
 # %%
 
 with get(
-    "interface.execution.slurm", {"nodes": 32, "ranks": 56, "partition": "normal"}
+    "interface.execution.slurm",
+    {
+        "nodes": 20,
+        "ranks": 56,
+        "partition": "normal",
+        "preamble": f'\n\nexport UCX_TLS="knem,dc_x"\n\nibrun',
+    },
 ):
     motoneuron = get(
         "interface.dmosopt",
         [defaults, {}],
     ).launch()
+
+
+# %%
+#!code {motoneuron.execution.output_filepath()}
+# %%
+#!code {motoneuron.output_filepath}
+# %%
