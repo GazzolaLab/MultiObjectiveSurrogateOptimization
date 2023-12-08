@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from machinable import Execution
 from machinable.errors import ExecutionFailed
 import yaml
+import os
 
 
 def yes_or_no() -> bool:
@@ -84,10 +85,9 @@ class Slurm(Execution):
         nodes: int = 1
         ranks: int = 1
         partition: str = "development"
-        mpi: Optional[str] = "ibrun"
+        preamble: Optional[str] = "mpirun"
         throttle: float = 0.5
         confirm: bool = True
-        eager: bool = False
 
     def on_before_dispatch(self):
         if not self.config.eager and self.config.confirm:
@@ -139,8 +139,8 @@ class Slurm(Execution):
             if "--job-name" not in resources:
                 resources["--job-name"] = f"{executable.id}"
             if "--output" not in resources:
-                resources["--output"] = self.local_directory(
-                    executable.id, "output.log"
+                resources["--output"] = os.path.abspath(
+                    self.local_directory(executable.id, "output.log")
                 )
             if "--open-mode" not in resources:
                 resources["--open-mode"] = "append"
@@ -153,15 +153,13 @@ class Slurm(Execution):
                 if v not in [None, True]:
                     line += f"={v}"
                 sbatch_arguments.append(line)
+
             script += "\n".join(sbatch_arguments) + "\n"
 
-            if self.config.mpi:
-                n = int(resources.get("--nodes", 0)) * int(
-                    resources.get("--ntasks-per-node", 0)
-                )
-                if n > 1:
-                    print(f"Using {self.config.mpi} -n {n} ...")
-                    script += f"{self.config.mpi} -n {n} "
+            if self.config.preamble:
+                script += self.config.preamble
+                if script[-1] != " ":
+                    script += " "
 
             script += executable.dispatch_code()
 
@@ -205,27 +203,10 @@ class Slurm(Execution):
                     "script": script,
                 },
             )
+            self.save_file([executable.id, "slurm.sh"], script)
 
-            if self.config.eager:
-                print(self.output_filepath(executable))
-
-                try:
-                    from IPython.display import clear_output
-
-                    try:
-                        while not executable.cached():
-                            clear_output(wait=True)
-                            job = Job(job_id)
-                            print(yaml.dump(job.details))
-                            time.sleep(5)
-                    except KeyboardInterrupt:
-                        pass
-                except ImportError:
-                    pass
-                # self.stream_output(executable)
-            else:
-                if self.config.throttle > 0 and len(self.pending_executables) > 1:
-                    time.sleep(self.config.throttle)
+            if self.config.throttle > 0 and len(self.pending_executables) > 1:
+                time.sleep(self.config.throttle)
 
     def canonicalize_resources(self, resources):
         if resources is None:
