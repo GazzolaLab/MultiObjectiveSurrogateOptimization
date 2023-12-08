@@ -90,7 +90,7 @@ class Slurm(Execution):
         confirm: bool = True
 
     def on_before_dispatch(self):
-        if not self.config.eager and self.config.confirm:
+        if self.config.confirm:
             return confirm(self)
 
     def on_compute_default_resources(self, executable):
@@ -107,11 +107,6 @@ class Slurm(Execution):
     def __call__(self):
         jobs = {}
         for executable in self.pending_executables:
-            if self.config.eager and self.config.confirm:
-                print(f"Submitting {executable} eagerly, proceed? [Y/n]")
-                if not yes_or_no():
-                    break
-
             script = "#!/usr/bin/env bash\n"
 
             # check if job is already launched
