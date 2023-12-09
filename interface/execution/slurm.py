@@ -167,6 +167,7 @@ class Slurm(Execution):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.PIPE,
+                env=os.environ,
             )
 
             process.stdin.write(script.encode("utf8"))
