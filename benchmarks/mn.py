@@ -5,7 +5,8 @@ from functools import partial
 import logging
 from typing import Literal
 import ephys_utils as ephys
-from miv_simulator.mechanisms import compile_and_load
+from miv_simulator.mechanisms import load
+
 
 try:
     import dmosopt_MN_nrn
@@ -13,6 +14,7 @@ except ImportError as _ex:
     raise ModuleNotFoundError(
         "Make sure the Motoneuron-Modeling repo is in your PATH!"
     ) from _ex
+
 
 SOURCE = os.path.dirname(dmosopt_MN_nrn.__file__)
 
@@ -83,11 +85,7 @@ def obj_fun(
     rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
     worker=None,
 ):
-    if worker:
-        print("Worker: {worker}")
-
-    compile_and_load(f"{SOURCE}/mechanisms")
-
+    load(f"{SOURCE}/mechanisms")
     load_template(template_name, template_file=f"{SOURCE}/{template_name}.hoc")
 
     template = getattr(h, template_name)
