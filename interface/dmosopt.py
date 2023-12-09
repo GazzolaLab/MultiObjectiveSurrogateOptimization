@@ -148,7 +148,7 @@ class Dmosopt(Component):
                         target = alias[target]
                     try:
                         config.import_object_by_path(target)
-                    except Exception as _ex:
+                    except ImportError as _ex:
                         raise ValueError(
                             f"Could not resolve import path '{target}' for '{path}'"
                         ) from _ex

@@ -7,32 +7,36 @@ from machinable import get
 
 get("machinable.index", os.environ["STORAGE"]).__enter__()
 
+zdt1 = [
+    "interface.dmosopt",
+    {
+        "dopt_params": {
+            "opt_id": "zdt",
+            "space": {"x%d" % (i + 1): [0.0, 1.0] for i in range(30)},
+            "objective_names": ["y1", "y2"],
+            "problem_parameters": {},
+            "initial_maxiter": 10,
+            "optimizer": "age",
+            "n_initial": 3,
+            "population_size": 200,
+            "num_generations": 200,
+            "save_surrogate_evals": True,
+            "n_epochs": 2,
+            "save": True,
+            "obj_fun_name": "benchmarks.zdt.obj_fun",
+        }
+    },
+]
+
+
 # %%
 
 from machinable import get
 
+zdt1_ = get(zdt1)
+
 with get("interface.execution.slurm", {"nodes": 4, "ranks": 32, "partition": "normal"}):
-    # with get("interface.execution.local", {"mpi": "ibrun"}):
-    zdt1 = get(
-        "interface.dmosopt",
-        {
-            "dopt_params": {
-                "opt_id": "zdt",
-                "space": {"x%d" % (i + 1): [0.0, 1.0] for i in range(30)},
-                "objective_names": ["y1", "y2"],
-                "problem_parameters": {},
-                "initial_maxiter": 10,
-                "optimizer": "age",
-                "n_initial": 3,
-                "population_size": 200,
-                "num_generations": 200,
-                "save_surrogate_evals": True,
-                "n_epochs": 2,
-                "save": True,
-                "obj_fun_name": "benchmarks.zdt.obj_fun",
-            }
-        },
-    ).launch()
+    zdt1_.launch()
 
 # %%
 #!code {zdt1.execution.output_filepath()}
@@ -49,11 +53,12 @@ y = []
 y2 = []
 import os
 
+
 with get("interface.execution.slurm", {"nodes": 4, "ranks": 32, "partition": "normal"}):
     for population_size in x:
         zdt = get(
-            zdt1.module,
-            zdt1.version() + [{"dopt_params.population_size": population_size}],
+            zdt1,
+            {"dopt_params.population_size": population_size},
         ).launch()
         if not zdt.cached():
             y.append(float("NaN"))
@@ -87,8 +92,8 @@ import os
 with get("interface.execution.slurm", {"nodes": 4, "ranks": 32, "partition": "normal"}):
     for optimizer in x:
         zdt = get(
-            zdt1.module,
-            zdt1.version() + [{"dopt_params.optimizer": optimizer}],
+            zdt1,
+            {"dopt_params.optimizer": optimizer},
         ).launch()
         if not zdt.cached():
             y.append(float("NaN"))
@@ -107,5 +112,3 @@ plt.bar(x, y)
 plt.title("Hypervolume")
 plt.show()
 plt.bar(x, y2)
-
-# %%
