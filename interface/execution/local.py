@@ -8,6 +8,7 @@ from typing import Optional
 from machinable import Execution
 from machinable.utils import run_and_stream, chmodx
 from interface.execution.slurm import confirm
+from machinable.errors import ExecutionFailed
 
 
 class LocalExecution(Execution):
@@ -17,6 +18,7 @@ class LocalExecution(Execution):
         mpi: Optional[str] = "mpirun"
         ranks: Optional[int] = None
         nodes: Optional[int] = None
+        resume_failed: bool = False
 
     def on_before_dispatch(self):
         if self.config.confirm:
@@ -24,6 +26,18 @@ class LocalExecution(Execution):
 
     def __call__(self):
         for executable in self.pending_executables:
+            # check if failed
+            if not self.config.resume_failed:
+                if (
+                    executable.executions.filter(
+                        lambda x: x.is_incomplete(executable)
+                    ).count()
+                    > 0
+                ):
+                    raise ExecutionFailed(
+                        f"{executable.module} <{executable.id}> has previously been executed unsuccessfully. Set `resume_failed` to True to allow resubmission."
+                    )
+
             # automatically infer the ranks and nodes from the executable
             # (if the executable does not expose `ranks`, `nodes` will be ignored)
             if (ranks := self.config.ranks) == -1:

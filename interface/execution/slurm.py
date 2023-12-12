@@ -90,6 +90,7 @@ class Slurm(Execution):
         throttle: float = 0.5
         confirm: bool = True
         copy_project_source: bool = True
+        resume_failed: bool = False
 
     def on_before_dispatch(self):
         if self.config.confirm:
@@ -126,6 +127,18 @@ class Slurm(Execution):
                         f"{executable.id} is already launched with job_id={job.job_id}, skipping ..."
                     )
                     continue
+
+            # check if failed
+            if not self.config.resume_failed:
+                if (
+                    executable.executions.filter(
+                        lambda x: x.is_incomplete(executable)
+                    ).count()
+                    > 0
+                ):
+                    raise ExecutionFailed(
+                        f"{executable.module} <{executable.id}> has previously been executed unsuccessfully. Set `resume_failed` to True to allow resubmission."
+                    )
 
             resources = self.computed_resources(executable)
 
