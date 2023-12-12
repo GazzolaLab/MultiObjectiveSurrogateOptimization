@@ -4,11 +4,12 @@
 #
 # %%
 import os
-from machinable import get
+from machinable import get, Component
 
 get("machinable.index", os.environ["STORAGE"]).__enter__()
 
 # %%
+from miv_simulator.mechanisms import compile as compile_mechanisms
 
 motoneuron = [
     "interface.dmosopt",
@@ -18,6 +19,11 @@ motoneuron = [
             "obj_fun_init_name": "benchmarks.mn.make_obj_fun",
             "obj_fun_init_args": {
                 "template_name": "MN_nrn",
+                "mechanisms_directory": compile_mechanisms(
+                    "./benchmarks/motoneuron_modeling/mechanisms",
+                    os.path.expandvars("$SCRATCH/mechanisms"),
+                    recursive=False,
+                ),
             },
             "problem_parameters": {
                 "soma_f_Caconc": 0.004,
@@ -72,14 +78,7 @@ motoneuron = [
             "num_generations": 400,
             "resample_fraction": 1.0,
             "initial_maxiter": 10,
-            "surrogate_method": "megp",  # "gpr", # megp , gpr, None
-            # "surrogate_method_kwargs": {
-            #     "lengthscale_bounds": (1e-5, 100.0),
-            #     "batch_size": 100,
-            #     "n_iter": 30000,
-            #     "min_elbo_pct_change": 1.0,
-            #     "cuda": True,
-            # },
+            "surrogate_method": None,  # megp , gpr, None
             "feasibility_model": False,
             "save": True,
             "save_surrogate_evals": False,
@@ -90,22 +89,17 @@ motoneuron = [
 frontera = [
     "interface.execution.slurm",
     {
-        "preamble": '\n\nexport PYTHONPATH=$PYTHONPATH:/work/08818/fg14/frontera/mind-in-vitro/MultiObjectiveSurrogateOptimization\nexport UCX_TLS="knem,dc_x"\n\nibrun',
+        # "preamble": '\n\nexport PYTHONPATH=$PYTHONPATH:/work/08818/fg14/frontera/mind-in-vitro/MultiObjectiveSurrogateOptimization\nexport UCX_TLS="knem,dc_x"\n\nibrun',
     },
 ]
 
 # %%
-
-motoneuron_ = get(
-    motoneuron,
-    {"dopt_params": {"n_epochs": 3, "population_size": 1000, "n_initial": 1000}},
-)
-
-# %%
-
-with get(frontera, {"nodes": 20, "ranks": 56, "partition": "normal"}):
-    motoneuron_.launch()
-
-# %%
-# with get('interface.execution.local', {'mpi': 'ibrun'}):
-#     motoneuron_.new().launch()
+with get("interface.execution.local"):
+    motoneuron_ = get.new(
+        motoneuron,
+        {
+            "dopt_params": {
+                "n_epochs": 3,
+            }
+        },
+    ).launch()

@@ -1,0 +1,3 @@
+[submodule "benchmarks/motoneuron_modeling"]
+	path = benchmarks/motoneuron_modeling
+	url = https://github.com/GazzolaLab/Motoneuron-Modeling.git

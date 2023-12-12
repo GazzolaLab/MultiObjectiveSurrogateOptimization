@@ -4,27 +4,19 @@ import numpy as np
 from functools import partial
 import logging
 from typing import Literal
-import ephys_utils as ephys
+
 from miv_simulator.mechanisms import load
-
-
-try:
-    import dmosopt_MN_nrn
-except ImportError as _ex:
-    raise ModuleNotFoundError(
-        "Make sure the Motoneuron-Modeling repo is in your PATH!"
-    ) from _ex
-
-
-SOURCE = os.path.dirname(dmosopt_MN_nrn.__file__)
-
-from neuron_utils import (
+import benchmarks.motoneuron_modeling.ephys_utils as ephys
+from benchmarks.motoneuron_modeling import dmosopt_MN_nrn
+from benchmarks.motoneuron_modeling.neuron_utils import (
     ic_constant_f,
     run_iclamp,
     run_iclamp_steps,
     run_vclamp,
     load_template,
 )
+
+SOURCE = os.path.dirname(dmosopt_MN_nrn.__file__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -73,22 +65,27 @@ feature_dtypes = [
 ]
 
 
-def make_obj_fun(template_name, **kwargs):
-    return partial(obj_fun, template_name=template_name, **kwargs)
+def make_obj_fun(**kwargs):
+    return partial(obj_fun, **kwargs)
 
 
 def obj_fun(
     parameters,
-    template_name: str = "rn",
+    mechanisms_directory: str,
+    template_name: str,
     v_hold: float = -60,
     v_rest: float = -57.4,
     rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
     worker=None,
 ):
-    load(f"{SOURCE}/mechanisms")
-    load_template(template_name, template_file=f"{SOURCE}/{template_name}.hoc")
+    load(os.path.expandvars(mechanisms_directory))
 
-    template = getattr(h, template_name)
+    if not hasattr(h, template_name):
+        template = load_template(
+            template_name, template_file=f"{SOURCE}/{template_name}.hoc"
+        )
+    else:
+        template = getattr(h, template_name)
 
     cell = dmosopt_MN_nrn.init_cell(template_name, parameters, v_hold=v_hold)
     ic_constant_hold = cell.soma.ic_constant
