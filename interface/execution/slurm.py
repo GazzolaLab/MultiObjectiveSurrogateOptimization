@@ -2,10 +2,11 @@ import sys
 import subprocess
 import time
 from typing import Literal, Optional
-from machinable import Execution
+from machinable import Execution, Project
 from machinable.errors import ExecutionFailed
 import yaml
 import os
+from machinable.utils import run_and_stream, chmodx
 
 
 def yes_or_no() -> bool:
@@ -88,6 +89,7 @@ class Slurm(Execution):
         preamble: Optional[str] = "mpirun"
         throttle: float = 0.5
         confirm: bool = True
+        copy_project_source: bool = True
 
     def on_before_dispatch(self):
         if self.config.confirm:
@@ -107,6 +109,14 @@ class Slurm(Execution):
     def __call__(self):
         jobs = {}
         for executable in self.pending_executables:
+            source_code = Project.get().path()
+            if self.config.copy_project_source:
+                print("Copy project source code ...")
+                source_code = self.local_directory(executable.id, "source_code")
+                cmd = ["rsync", "-a", Project.get().path(""), source_code]
+                print(" ".join(cmd))
+                run_and_stream(cmd, check=True)
+
             script = "#!/usr/bin/env bash\n"
 
             # check if job is already launched
@@ -156,37 +166,29 @@ class Slurm(Execution):
                 if script[-1] != " ":
                     script += " "
 
-            script += executable.dispatch_code()
+            script += executable.dispatch_code(project_directory=source_code)
 
             print(f"Submitting job {executable} with resources: ")
             print(yaml.dump(resources))
 
             # submit to slurm
-            process = subprocess.Popen(
-                ["sbatch"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.PIPE,
-                env=os.environ,
+            script_file = chmodx(self.save_file([executable.id, "slurm.sh"], script))
+
+            cmd = ["sbatch", script_file]
+            print(" ".join(cmd))
+
+            output = subprocess.run(
+                cmd, text=True, check=True, env=os.environ, capture_output=True
             )
 
-            process.stdin.write(script.encode("utf8"))
-
-            stdoutput, _ = process.communicate()
-
-            returncode = process.returncode
-
-            output = stdoutput.decode("utf8").strip()
-
-            if returncode != 0:
-                raise ExecutionFailed(output)
+            print(output.stdout)
 
             try:
-                job_id = int(output.rsplit(" ", maxsplit=1)[-1])
+                job_id = int(output.stdout.rsplit(" ", maxsplit=1)[-1])
             except ValueError:
                 job_id = False
             print(
-                f"{output}  named `{resources['--job-name']}` for {executable.local_directory()} (output at {resources['--output']})"
+                f"{job_id}  named `{resources['--job-name']}` for {executable.local_directory()} (output at {resources['--output']})"
             )
 
             # save job information
@@ -199,7 +201,6 @@ class Slurm(Execution):
                     "script": script,
                 },
             )
-            self.save_file([executable.id, "slurm.sh"], script)
 
             if self.config.throttle > 0 and len(self.pending_executables) > 1:
                 time.sleep(self.config.throttle)
