@@ -8,6 +8,7 @@ from typing import Dict, Optional, List, Callable, Literal, Set, Any, Union, Tup
 import copy
 from machinable.config import match_method
 import os
+import inspect
 import h5py
 from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
@@ -131,27 +132,50 @@ class Dmosopt(Component):
                 )
 
             # validate imports eagerly
-            for path, alias in [
-                ("obj_fun_name", {}),
-                ("obj_fun_init_name", {}),
-                ("controller_init_fun_name", {}),
-                ("reduce_fun_name", {}),
-                ("broker_fun_name", {}),
-                ("initial_method", config.default_sampling_methods),
-                ("surrogate_method", config.default_surrogate_methods),
-                ("optimizer", config.default_optimizers),
-                ("sensitivity_method", config.default_sa_methods),
-                ("feature_dtypes", {}),
+            for path, alias, kw in [
+                ("obj_fun_name", {}, None),
+                ("obj_fun_init_name", {}, "controller_init_fun_args"),
+                ("controller_init_fun_name", {}, "controller_init_fun_args"),
+                ("reduce_fun_name", {}, "reduce_fun_args"),
+                ("broker_fun_name", {}, None),
+                ("initial_method", config.default_sampling_methods, None),
+                (
+                    "surrogate_method",
+                    config.default_surrogate_methods,
+                    "surrogate_method_kwargs",
+                ),
+                ("optimizer", config.default_optimizers, "optimizer_kwargs"),
+                (
+                    "sensitivity_method",
+                    config.default_sa_methods,
+                    "sensitivity_method_kwargs",
+                ),
+                ("feature_dtypes", {}, None),
             ]:
                 if isinstance(target := payload.get(path, None), str):
                     if target in alias:
                         target = alias[target]
                     try:
-                        config.import_object_by_path(target)
+                        obj = config.import_object_by_path(target)
                     except ImportError as _ex:
                         raise ValueError(
                             f"Could not resolve import path '{target}' for '{path}'"
                         ) from _ex
+
+                    if (d := payload.get(kw, None)) is not None:
+                        # verify arguments
+                        sig = inspect.signature(obj)
+                        for key in d.keys():
+                            if key not in sig.parameters:
+                                message = ""
+                                for name, param in sig.parameters.items():
+                                    if param.default is param.empty:
+                                        message += f"{name}, "
+                                    else:
+                                        message += f"{name}={param.default}, "
+                                raise ValueError(
+                                    f"Invalid {kw} for {target}. Found `{key}`, but signature is {message[:-2]}"
+                                )
 
             return payload
 
