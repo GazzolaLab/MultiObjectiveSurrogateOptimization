@@ -8,6 +8,7 @@ from typing import Dict, Optional, List, Callable, Literal, Set, Any, Union, Tup
 import copy
 from machinable.config import match_method
 import os
+import sys
 import inspect
 import h5py
 from dmosopt.dmosopt import init_from_h5
@@ -16,6 +17,19 @@ from dmosopt.hv import HyperVolume
 from dmosopt import indicators
 import matplotlib.pyplot as plt
 import numpy as np
+
+sys_excepthook = sys.excepthook
+
+
+def mpi_excepthook(type, value, traceback):
+    sys_excepthook(type, value, traceback)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if MPI.COMM_WORLD.size > 1:
+        MPI.COMM_WORLD.Abort(1)
+
+
+sys.excepthook = mpi_excepthook
 
 
 class Dmosopt(Component):
@@ -78,7 +92,7 @@ class Dmosopt(Component):
                 "save_surrogate_evals": bool,
                 "save_optimizer_params": bool,
                 "metadata": Any,
-                "surrogate_method": Union[
+                "surrogate_method_name": Union[
                     str,
                     Literal[
                         "gpr",
@@ -95,9 +109,9 @@ class Dmosopt(Component):
                     None,
                 ],
                 "surrogate_method_kwargs": Dict,
-                "optimizer": Literal["nsga2", "age", "smpso", "cmaes"],
+                "optimizer_name": Literal["nsga2", "age", "smpso", "cmaes"],
                 "optimizer_kwargs": Dict,
-                "sensitivity_method": Literal["dgsm", "fast"],
+                "sensitivity_method_name": Literal["dgsm", "fast"],
                 "sensitivity_method_kwargs": Dict,
                 "local_random": Any,
                 "random_seed": Optional[int],
@@ -140,13 +154,13 @@ class Dmosopt(Component):
                 ("broker_fun_name", {}, None),
                 ("initial_method", config.default_sampling_methods, None),
                 (
-                    "surrogate_method",
+                    "surrogate_method_name",
                     config.default_surrogate_methods,
                     "surrogate_method_kwargs",
                 ),
-                ("optimizer", config.default_optimizers, "optimizer_kwargs"),
+                ("optimizer_name", config.default_optimizers, "optimizer_kwargs"),
                 (
-                    "sensitivity_method",
+                    "sensitivity_method_name",
                     config.default_sa_methods,
                     "sensitivity_method_kwargs",
                 ),
