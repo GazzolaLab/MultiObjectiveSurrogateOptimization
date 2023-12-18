@@ -1,6 +1,6 @@
 from machinable import Component
 from mpi4py import MPI
-from pydantic import BaseModel, Field, field_validator, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, field_validator, TypeAdapter
 from dmosopt import dmosopt
 from dmosopt import config
 from machinable.config import to_dict
@@ -34,6 +34,8 @@ sys.excepthook = mpi_excepthook
 
 class Dmosopt(Component):
     class Config(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        
         dopt_params: Dict = Field("???")
         time_limit: Optional[int] = None
         feasible: bool = True
