@@ -4,10 +4,26 @@ import numpy as np
 from functools import partial
 import logging
 from typing import Literal
+import sys
+from mpi4py import MPI
+
+
+sys_excepthook = sys.excepthook
+
+
+def mpi_excepthook(type, value, traceback):
+    sys_excepthook(type, value, traceback)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if MPI.COMM_WORLD.size > 1:
+        MPI.COMM_WORLD.Abort(1)
+
+
+sys.excepthook = mpi_excepthook
 
 from miv_simulator.mechanisms import load
+from scipy import optimize
 import benchmarks.motoneuron_modeling.ephys_utils as ephys
-from benchmarks.motoneuron_modeling import dmosopt_MN_nrn
 from benchmarks.motoneuron_modeling.neuron_utils import (
     ic_constant_f,
     run_iclamp,
@@ -16,7 +32,7 @@ from benchmarks.motoneuron_modeling.neuron_utils import (
     load_template,
 )
 
-SOURCE = os.path.dirname(dmosopt_MN_nrn.__file__)
+SOURCE = os.path.dirname(ephys.__file__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,6 +81,55 @@ feature_dtypes = [
 ]
 
 
+def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None):
+
+    h.cvode.use_fast_imem(1)
+    h.cvode.cache_efficient(1)
+    h.secondorder = 2
+
+    h.celsius = celsius
+
+    # Create the cell
+    template = getattr(h, template_name)
+    cell = template(pp)
+
+    # Initialize cell
+    h.v_init = v_hold
+    h.init()
+
+    if ic_constant_val is None:
+        cell.init_ic(h.v_init)
+        ic_constant_0 = cell.soma.ic_constant
+
+        # Obtain value for ic_constant such that RMP = v_hold
+        x0 = 0.0
+        ic_constant0 = ic_constant_0
+        try:
+            x0, res = optimize.brentq(
+                ic_constant_f,
+                -0.5,
+                0.5,
+                args=(template, pp, ic_constant_0, h.v_init),
+                xtol=1e-6,
+                maxiter=200,
+                disp=False,
+                full_output=True,
+            )
+        except ValueError:
+            x0 = 0.
+        else:
+            if not res.converged:
+                x0 = 0.
+        
+        ic_constant_val = ic_constant_0 + x0
+
+    cell.soma.ic_constant = ic_constant_val
+    h.finitialize(h.v_init)
+    h.finitialize(h.v_init)
+
+    return cell
+
+
 def make_obj_fun(**kwargs):
     return partial(obj_fun, **kwargs)
 
@@ -87,7 +152,7 @@ def obj_fun(
     else:
         template = getattr(h, template_name)
 
-    cell = dmosopt_MN_nrn.init_cell(template_name, parameters, v_hold=v_hold)
+    cell = init_cell(template_name, parameters, v_hold=v_hold)
     ic_constant_hold = cell.soma.ic_constant
 
     # Check whether the initial voltage constraint was satisfied
@@ -98,7 +163,7 @@ def obj_fun(
     initial_v_constr = 1 if abs(initial_v_error_hold) < 1.0 else -1
     logger.info(f"ic_constant check: {initial_v_error_hold} constr: {initial_v_constr}")
 
-    cell = dmosopt_MN_nrn.init_cell(
+    cell = init_cell(
         template_name, parameters, v_hold=v_hold, ic_constant_val=ic_constant_hold
     )
 
@@ -187,7 +252,7 @@ def obj_fun(
 
     # Run iclamp experiments
     iclamp_results = []
-    cell = dmosopt_MN_nrn.init_cell(
+    cell = init_cell(
         template_name, parameters, v_hold=v_hold, ic_constant_val=ic_constant_hold
     )
     iclamp_results = run_iclamp_steps(
@@ -302,7 +367,7 @@ def obj_fun(
     monotonic_fI_constr = 1 if np.all(fI_rate_diff > 0) else -1
 
     # Obtain ic_constant for v_rest target
-    cell = dmosopt_MN_nrn.init_cell(template_name, parameters, v_hold=v_rest)
+    cell = init_cell(template_name, parameters, v_hold=v_rest)
     ic_constant_rest = cell.soma.ic_constant
 
     # Pass to dmosopt
