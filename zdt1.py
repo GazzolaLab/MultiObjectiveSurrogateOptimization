@@ -16,7 +16,7 @@ zdt1 = [
             "objective_names": ["y1", "y2"],
             "problem_parameters": {},
             "initial_maxiter": 10,
-            "optimizer": "age",
+            "optimizer_name": "age",
             "n_initial": 3,
             "population_size": 200,
             "num_generations": 200,

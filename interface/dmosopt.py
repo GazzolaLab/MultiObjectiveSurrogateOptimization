@@ -35,7 +35,7 @@ sys.excepthook = mpi_excepthook
 class Dmosopt(Component):
     class Config(BaseModel):
         model_config = ConfigDict(extra="forbid")
-        
+
         dopt_params: Dict = Field("???")
         time_limit: Optional[int] = None
         feasible: bool = True

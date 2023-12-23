@@ -7,9 +7,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-miv_simulator = { git = "https://github.com/GazzolaLab/MiV-Simulator.git", branch = "main" }
+miv_simulator = { git = "https://github.com/GazzolaLab/MiV-Simulator.git", branch = "feature/mechanism-handling" }
 dmosopt = { git = "https://github.com/iraikov/dmosopt.git", branch = "main" }
-machinable = "^4.6"
+machinable = "^4"
 
 [build-system]
 requires = ["poetry-core"]

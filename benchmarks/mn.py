@@ -82,7 +82,6 @@ feature_dtypes = [
 
 
 def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None):
-
     h.cvode.use_fast_imem(1)
     h.cvode.cache_efficient(1)
     h.secondorder = 2
@@ -116,11 +115,11 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
                 full_output=True,
             )
         except ValueError:
-            x0 = 0.
+            x0 = 0.0
         else:
             if not res.converged:
-                x0 = 0.
-        
+                x0 = 0.0
+
         ic_constant_val = ic_constant_0 + x0
 
     cell.soma.ic_constant = ic_constant_val
@@ -136,14 +135,14 @@ def make_obj_fun(**kwargs):
 
 def obj_fun(
     parameters,
-    mechanisms_directory: str,
+    mechanisms: str,
     template_name: str,
     v_hold: float = -60,
     v_rest: float = -57.4,
     rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
     worker=None,
 ):
-    load(os.path.expandvars(mechanisms_directory))
+    load(os.path.join(os.path.expandvars("$SCRATCH/mechanisms"), mechanisms))
 
     if not hasattr(h, template_name):
         template = load_template(
