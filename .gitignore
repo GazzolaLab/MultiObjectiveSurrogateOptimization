@@ -2,11 +2,14 @@ _machinable/remotes
 compiled/
 storage/
 *.sqlite
+*.h5
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+.vscode
 
 # C extensions
 *.so

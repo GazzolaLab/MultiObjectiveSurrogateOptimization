@@ -333,3 +333,44 @@ class Dmosopt(Component):
         y_true = zdt1_pareto()
         plt.plot(y_true[:, 0], y_true[:, 1], "k-", label="True Pareto")
         plt.legend()
+
+
+    def dispatch_code_debug(self, inline = True, project_directory = None, python = None):
+        from machinable import Project
+        from machinable.utils import chmodx
+        from machinable.element import _CONNECTIONS as connected_elements
+        
+        if project_directory is None:
+            project_directory = Project.get().path()
+        if python is None:
+            python = sys.executable
+        lines = ["from machinable import Project, Element, Component"]
+        # context
+        lines.append(f"Project('{project_directory}').__enter__()")
+        for kind, elements in connected_elements.items():
+            if kind in ["Project", "Execution"]:
+                continue
+            for element in elements:
+                jn = element.as_json().replace('"', '\\"').replace("'", "\\'")
+                lines.append(f"Element.from_json('{jn}').__enter__()")
+        # dispatch
+        # lines.append("from mpi4py import MPI")
+        # lines.append("import debugpy")
+        # lines.append("rank = MPI.COMM_WORLD.Get_rank()")
+        # lines.append("if rank == 1:")
+        # lines.append("    debugpy.listen(5678)")
+        # lines.append("    debugpy.wait_for_client()")
+        # lines.append("    debugpy.breakpoint()")
+        lines.append(f"component__ = Component.from_directory('{self.local_directory()}')")
+        lines.append("component__.dispatch()")
+
+        # write python script
+        dispatch_script = chmodx(self.execution.save_file([self.id, 'dispatch.py'], "\n".join([f"#!{python}"] + lines)))
+        
+        return f"\n\ncd {project_directory}\n\nexport PYTHONPATH={project_directory}:$PYTHONPATH\n\nibrun {dispatch_script}"
+
+        if inline:
+            code = ";".join(lines)
+            return f'{python} -c "{code}"'
+
+        return "\n".join(lines)
