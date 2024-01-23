@@ -6,7 +6,7 @@ import logging
 from typing import Literal
 import sys
 from mpi4py import MPI
-
+import time
 
 sys_excepthook = sys.excepthook
 
@@ -78,6 +78,7 @@ feature_dtypes = [
     ),
     ("threshold", np.float32, N_exp),
     ("spike_amplitude", np.float32, N_exp),
+    ("evaluation_time", np.float32),
 ]
 
 
@@ -142,6 +143,8 @@ def obj_fun(
     rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
     worker=None,
 ):
+    start_time = time.time()
+    
     load(os.path.join(os.path.expandvars("$SCRATCH/mechanisms"), mechanisms))
 
     if not hasattr(h, template_name):
@@ -368,6 +371,8 @@ def obj_fun(
     # Obtain ic_constant for v_rest target
     cell = init_cell(template_name, parameters, v_hold=v_rest)
     ic_constant_rest = cell.soma.ic_constant
+    
+    evaluation_time = time.time() - start_time
 
     # Pass to dmosopt
     feature_list = [
@@ -382,6 +387,7 @@ def obj_fun(
             ISI_values,
             thresholds,
             mean_spike_amplitudes,
+            evaluation_time
         )
     ]
 
@@ -398,6 +404,7 @@ def obj_fun(
                 ISI_values,
                 thresholds,
                 mean_spike_amplitudes,
+                evaluation_time,
             )
         ],
         dtype=np.dtype(feature_dtypes),
