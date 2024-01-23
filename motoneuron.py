@@ -72,44 +72,80 @@ motoneuron = [
             "optimizer_name": "nsga2",
             # "optimizer_kwargs": {"sampling_method": "sobol"},
             "initial_method": "slh",
-            "n_initial": 800,
+            "n_initial": 800, # times number of parameters
+            "initial_maxiter": 0,
             "n_epochs": 10,
             "population_size": 400,
             "num_generations": 400,
-            "resample_fraction": 1.0,
-            "initial_maxiter": 10,
-            "surrogate_method_name": None,  # megp , gpr, None
+            "resample_fraction": 1.0, # times the population_size
+            "surrogate_method_name": None,  # megp , gpr, None,
+            "surrogate_method_kwargs": {},
             "feasibility_model": False,
             "save": True,
-            "save_surrogate_evals": False,
+            "save_surrogate_evals": True,
         }
     },
 ]
 
 
+
 # %%
+
+# Baseline
 with get(
     "interface.execution.frontera",
     {
-        "nodes": 20,
+        "nodes": 32,
         "ranks": 56,
         "partition": "normal",
     },
-    resources={"t": "2:00:00"},
+    resources={"t": "36:00:00"},
 ):
-    for optimizer, surrogate, population_size in [
-        ("nsga2", "gpr", 1000),
-    ]:
-        motoneuron_ = get(
-            motoneuron,
-            {
-                "dopt_params": {
-                    "n_epochs": 2,
-                    "n_initial": 2000,
-                    "population_size": population_size,
-                    "num_generations": 200,
-                    "optimizer_name": optimizer,
-                    "surrogate_method_name": surrogate,
-                }
-            },
-        ).launch()
+    for trial in range(3):
+        with get('machinable.scope', {'trial': f'baseline{trial}'}):
+            motoneuron_ = get(
+                motoneuron,
+                {
+                    "dopt_params": {
+                        "n_epochs": 10,
+                        "n_initial": 200,
+                        "population_size": 200,
+                        "num_generations": 200,
+                        "resample_fraction": 1.0, 
+                        "surrogate_method_name": None
+                    },
+                    
+                },
+            ).launch()
+
+# %%
+
+# Surrogate method
+
+with get(
+    "interface.execution.frontera",
+    {
+        "nodes": 32,
+        "ranks": 56,
+        "partition": "normal",
+    },
+    resources={"t": "4:00:00"},
+):
+    for trial in range(3):
+        with get('machinable.scope', {'trial': f'{trial}'}):
+            motoneuron_ = get(
+                motoneuron,
+                {
+                    "dopt_params": {
+                        "n_epochs": 10,
+                        "n_initial": 200,
+                        "population_size": 200,
+                        "num_generations": 200,
+                        "resample_fraction": 1.0, 
+                        "surrogate_method_name": "gpr"
+                    },
+                    
+                },
+            ).launch()
+
+# %%
