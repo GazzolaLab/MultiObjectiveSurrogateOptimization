@@ -202,9 +202,10 @@ class Dmosopt(Component):
         if "local_random" not in params and "random_seed" not in params:
             params["random_seed"] = self.seed
         if "feature_dtypes" in params:
-            params["feature_dtypes"] = config.import_object_by_path(
-                params["feature_dtypes"]
-            )
+            feature_dtypes = config.import_object_by_path(params["feature_dtypes"])
+            if callable(feature_dtypes):
+                feature_dtypes = feature_dtypes(self)
+            params["feature_dtypes"] = feature_dtypes
         dmosopt.run(
             dopt_params=params,
             time_limit=self.config.time_limit,
@@ -334,12 +335,11 @@ class Dmosopt(Component):
         plt.plot(y_true[:, 0], y_true[:, 1], "k-", label="True Pareto")
         plt.legend()
 
-
-    def dispatch_code_debug(self, inline = True, project_directory = None, python = None):
+    def dispatch_code_debug(self, inline=True, project_directory=None, python=None):
         from machinable import Project
         from machinable.utils import chmodx
         from machinable.element import _CONNECTIONS as connected_elements
-        
+
         if project_directory is None:
             project_directory = Project.get().path()
         if python is None:
@@ -361,12 +361,18 @@ class Dmosopt(Component):
         # lines.append("    debugpy.listen(5678)")
         # lines.append("    debugpy.wait_for_client()")
         # lines.append("    debugpy.breakpoint()")
-        lines.append(f"component__ = Component.from_directory('{self.local_directory()}')")
+        lines.append(
+            f"component__ = Component.from_directory('{self.local_directory()}')"
+        )
         lines.append("component__.dispatch()")
 
         # write python script
-        dispatch_script = chmodx(self.execution.save_file([self.id, 'dispatch.py'], "\n".join([f"#!{python}"] + lines)))
-        
+        dispatch_script = chmodx(
+            self.execution.save_file(
+                [self.id, "dispatch.py"], "\n".join([f"#!{python}"] + lines)
+            )
+        )
+
         return f"\n\ncd {project_directory}\n\nexport PYTHONPATH={project_directory}:$PYTHONPATH\n\nibrun {dispatch_script}"
 
         if inline:
