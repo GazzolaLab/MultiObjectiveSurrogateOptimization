@@ -111,6 +111,7 @@ class Dmosopt(Component):
                     None,
                 ],
                 "surrogate_method_kwargs": Dict,
+                "surrogate_custom_training": Optional[str],
                 "optimizer_name": Literal["nsga2", "age", "smpso", "cmaes"],
                 "optimizer_kwargs": Dict,
                 "sensitivity_method_name": Literal["dgsm", "fast"],
@@ -160,6 +161,7 @@ class Dmosopt(Component):
                     config.default_surrogate_methods,
                     "surrogate_method_kwargs",
                 ),
+                ("surrogate_custom_training", {}, None),
                 ("optimizer_name", config.default_optimizers, "optimizer_kwargs"),
                 (
                     "sensitivity_method_name",
