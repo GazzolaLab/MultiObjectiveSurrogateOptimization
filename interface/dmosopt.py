@@ -17,6 +17,7 @@ from dmosopt.hv import HyperVolume
 from dmosopt import indicators
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 sys_excepthook = sys.excepthook
 
@@ -336,6 +337,68 @@ class Dmosopt(Component):
         y_true = zdt1_pareto()
         plt.plot(y_true[:, 0], y_true[:, 1], "k-", label="True Pareto")
         plt.legend()
+
+    def load_h5(self, filepath: str, opt_id: Optional[str] = None, problem_id: int = 0):
+        if opt_id is None:
+            opt_id = self.config.dopt_params.opt_id
+
+        with h5py.File(filepath, "r") as h5:
+            # constaints
+            constraint_enum = h5py.check_enum_dtype(
+                h5[f"{opt_id}/constraint_enum"].dtype
+            )
+            constraint_enum_T = {v: k for k, v in constraint_enum.items()}
+            constraint_names = [
+                constraint_enum_T[s[0]] for s in iter(h5[f"{opt_id}/constraint_spec"])
+            ]
+            constraints = pd.DataFrame(
+                h5[f"{opt_id}/{problem_id}/constraints"][:], columns=constraint_names
+            )
+
+            # epochs
+            epochs = h5[f"{opt_id}/{problem_id}/epochs"][:]
+
+            # features
+            feature_enum = h5py.check_enum_dtype(h5[f"{opt_id}/feature_enum"].dtype)
+            feature_enum_T = {v: k for k, v in feature_enum.items()}
+            feature_names = [
+                feature_enum_T[s[0]] for s in iter(h5[f"{opt_id}/feature_spec"])
+            ]
+            features = h5[f"{opt_id}/{problem_id}/features"][:]
+
+            # objectives
+            objective_enum = h5py.check_enum_dtype(h5[f"{opt_id}/objective_enum"].dtype)
+            objective_enum_T = {v: k for k, v in objective_enum.items()}
+            objective_names = [
+                objective_enum_T[s[0]] for s in iter(h5[f"{opt_id}/objective_spec"])
+            ]
+            objectives = pd.DataFrame(
+                h5[f"{opt_id}/{problem_id}/objectives"][:], columns=objective_names
+            )
+
+            # parameters
+            parameter_enum = h5py.check_enum_dtype(h5[f"{opt_id}/parameter_enum"].dtype)
+            parameter_enum_T = {v: k for k, v in parameter_enum.items()}
+            parameter_names = [
+                parameter_enum_T[s[0]] for s in iter(h5[f"{opt_id}/parameter_spec"])
+            ]
+            parameters = pd.DataFrame(
+                h5[f"{opt_id}/{problem_id}/parameters"][:], columns=parameter_names
+            )
+
+            # predictions
+            predictions = pd.DataFrame(
+                h5[f"{opt_id}/{problem_id}/predictions"][:], columns=objective_names
+            )
+
+        return {
+            "constraints": constraints,
+            "epochs": epochs,
+            "features": features,
+            "objectives": objectives,
+            "parameters": parameters,
+            "predictions": predictions,
+        }
 
     def dispatch_code_debug(self, inline=True, project_directory=None, python=None):
         from machinable import Project
