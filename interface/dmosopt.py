@@ -226,8 +226,23 @@ class Dmosopt(Component):
             worker_debug=self.config.worker_debug,
         )
 
-    def config_use(self, path):
-        return config.import_object_by_path(path)
+    def evaluate_objective_at(self, x):
+        import logging
+
+        logging.basicConfig(level=logging.INFO)
+        if "obj_fun_init_name" in self.config.dopt_params:
+            obj_fun = config.import_object_by_path(
+                self.config.dopt_params.obj_fun_init_name
+            )(**self.config.dopt_params.obj_fun_init_args)
+        else:
+            obj_fun = config.import_object_by_path(self.config.dopt_params.obj_fun_name)
+
+        return obj_fun(
+            {
+                **self.config.dopt_params.problem_parameters,
+                **{k: x[n] for n, k in enumerate(self.config.dopt_params.space.keys())},
+            }
+        )
 
     @property
     def output_filepath(self) -> str:
@@ -338,7 +353,15 @@ class Dmosopt(Component):
         plt.plot(y_true[:, 0], y_true[:, 1], "k-", label="True Pareto")
         plt.legend()
 
-    def load_h5(self, filepath: str, opt_id: Optional[str] = None, problem_id: int = 0):
+    def load_h5(
+        self,
+        filepath: Optional[str] = None,
+        opt_id: Optional[str] = None,
+        problem_id: int = 0,
+    ):
+        if filepath is None:
+            filepath = self.output_filepath
+
         if opt_id is None:
             opt_id = self.config.dopt_params.opt_id
 
