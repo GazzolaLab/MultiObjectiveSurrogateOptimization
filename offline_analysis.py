@@ -65,7 +65,7 @@ model.load_weights("model.h5")
 import multiprocessing
 from sklearn.utils import gen_batches
 
-batch_size = 32
+batch_size = 128
 threshold = 100
 
 for i, batch in enumerate(gen_batches(n_initial, batch_size)):
@@ -89,7 +89,7 @@ for i, batch in enumerate(gen_batches(n_initial, batch_size)):
 
     y_feasible = model.predict(x_feasible, verbose=0)
 
-    processes = multiprocessing.cpu_count()
+    processes = multiprocessing.cpu_count() // 2
     with multiprocessing.Pool(processes=processes) as pool:
         evals = pool.map(c.evaluate_objective_at, x_feasible)
 
@@ -113,29 +113,34 @@ analysis = False
 # %%
 if analysis:
     import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.colors
     import pickle
-    from sklearn.utils import gen_batches
 
-    batch_size = 32
-    threshold = 100
     total = 0
     total_was_feasible = 0
     total_made_feasible = 0
     total_destroyed = 0
     total_kept_feasible = 0
+    total_wrong_believes = 0
 
-    for i, batch in enumerate(gen_batches(n_initial, batch_size)):
-        fn = f"results/{i}.p"
+    was_feasible_all = []
+    believed_feasible_all = []
+    is_feasible_all = []
+    destroyed_all = []
 
-        if not os.path.isfile(fn):
+    for ffn in os.listdir("./results"):
+        fn = "./results/" + ffn
+        if not fn.endswith(".p") or not os.path.isfile(fn):
             break
 
         with open(fn, "rb") as f:
             d = pickle.load(f)
 
-        was_feasible = (d["y_prime"] > 0).all(axis=1)
-        believed_feasible = (d["y_pred"] > 0).all(axis=1)
-        is_feasible = np.array([(e[-1] > 0).all() for e in d["evals"]])
+        was_feasible = (d["y_prime"] > 0.99).all(axis=1)
+        believed_feasible = (d["y_pred"] > 0.99).all(axis=1)
+        is_feasible = np.array([(e[-1] > 0.99).all() for e in d["evals"]])
+        wrong_believes = believed_feasible != was_feasible
 
         destroyed = np.zeros_like(was_feasible, dtype=int)
         kept_feasible = np.zeros_like(was_feasible, dtype=int)
@@ -145,17 +150,87 @@ if analysis:
         destroyed[(was_feasible) & (~believed_feasible) & (~is_feasible)] = 1
         kept_feasible[(was_feasible) & (~believed_feasible) & is_feasible] = 1
 
+        was_feasible_all.append(was_feasible)
+        believed_feasible_all.append(believed_feasible)
+        is_feasible_all.append(is_feasible)
+        destroyed_all.append(destroyed)
+
         total += len(d["y_prime"])
         total_was_feasible += was_feasible.sum()
         total_made_feasible += made_feasible.sum()
         total_destroyed += destroyed.sum()
         total_kept_feasible += kept_feasible.sum()
+        total_wrong_believes += wrong_believes.sum()
 
     print("Total", total)
     print("Was feasible", total_was_feasible)
     print("Destroyed", total_destroyed)
     print("Kept feasible", total_kept_feasible)
     print("Made feasible", total_made_feasible)
+    print("Wrong believes", total_wrong_believes)
+
+    was_feasible_all = np.concatenate(was_feasible_all)
+    believed_feasible_all = np.concatenate(believed_feasible_all)
+    is_feasible_all = np.concatenate(is_feasible_all)
+    destroyed_all = np.concatenate(destroyed_all)
+
+    iterations = np.arange(len(was_feasible_all))
+    y_offset = np.ones(len(was_feasible_all))
+    y_offset_factor = [8, 6, 4, 2]
+
+    plt.rcParams.update(
+        {"font.size": 26, "text.usetex": True, "font.family": "STIXGeneral"}
+    )
+
+    plt.figure(figsize=(30, 6))
+    cmap = matplotlib.colors.ListedColormap(["lightgrey", "forestgreen"])
+    size = 2500
+    plt.scatter(
+        iterations,
+        y_offset * y_offset_factor[0],
+        c=was_feasible_all,
+        cmap=cmap,
+        marker="|",
+        s=size,
+    )
+    plt.scatter(
+        iterations,
+        y_offset * y_offset_factor[1],
+        c=believed_feasible_all,
+        cmap=matplotlib.colors.ListedColormap(["lightgrey", "blue"]),
+        marker="|",
+        s=size,
+    )
+    plt.scatter(
+        iterations,
+        y_offset * y_offset_factor[2],
+        c=is_feasible_all,
+        cmap=cmap,
+        marker="|",
+        s=size,
+    )
+    plt.scatter(
+        iterations,
+        y_offset * y_offset_factor[3],
+        c=destroyed_all,
+        cmap=matplotlib.colors.ListedColormap(["lightgrey", "red"]),
+        marker="|",
+        s=size,
+    )
+    plt.yticks(
+        y_offset_factor,
+        [
+            f"Was feasible ({total_was_feasible})",
+            f"Believed feasible ({(believed_feasible_all > 0).sum()})",
+            f"Now Feasible ({(is_feasible_all > 0).sum()})",
+            f"Now Infeasible ({(destroyed_all > 0).sum()})",
+        ],
+    )
+    plt.ylim(0, 10)
+
+    # plt.savefig('feasibility.pdf')
+
+    plt.show()
 
 # %%
 n_initial = 25000
