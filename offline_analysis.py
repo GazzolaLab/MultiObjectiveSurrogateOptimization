@@ -62,39 +62,45 @@ model.load_weights("model.h5")
 
 # %%
 
-for i in range(X_test.shape[0] - 1, 0, -100):
+import multiprocessing
+from sklearn.utils import gen_batches
+
+batch_size = 32
+threshold = 100
+
+for i, batch in enumerate(gen_batches(n_initial, batch_size)):
     fn = f"results/{i}.p"
 
     if os.path.isfile(fn):
         continue
 
-    x_prime = X_test[i : i + 1, :]
-    y_prime = y_test[i : i + 1, :]
+    x_prime = X_test[batch, :]
+    y_prime = y_test[batch, :]
 
     y_pred = model.predict(x_prime, verbose=0)
 
-    evals = []
-    for transform in ["square", "exp", "piece_exp"]:
-        x_feasible, steps = model.make_feasible(
-            x_prime, learning_rate=0.1, transform=transform, verbose=0
-        )
-        y_feasible = model.predict(x_feasible, verbose=0)
-        xy_true = c.evaluate_objective_at(x_feasible[0])
-        evals.append(
-            {
-                "transform": transform,
-                "steps": steps,
-                "x_feasible": x_feasible,
-                "y_feasible": y_feasible,
-                "xy_true": xy_true,
-            }
-        )
+    x_feasible, steps = model.make_feasible(
+        x_prime,
+        learning_rate=0.1,
+        transform=list(c.config.dopt_params.space.values()),
+        verbose=0,
+        max_iterations=threshold + 1,
+    )
+
+    y_feasible = model.predict(x_feasible, verbose=0)
+
+    processes = multiprocessing.cpu_count()
+    with multiprocessing.Pool(processes=processes) as pool:
+        evals = pool.map(c.evaluate_objective_at, x_feasible)
 
     d = {
         "i": i,
         "x_prime": x_prime,
         "y_prime": y_prime,
         "y_pred": y_pred,
+        "x_feasible": x_feasible,
+        "y_feasible": y_feasible,
+        "steps": steps,
         "evals": evals,
     }
 
@@ -103,42 +109,55 @@ for i in range(X_test.shape[0] - 1, 0, -100):
 
 
 # %%
+analysis = False
+# %%
+if analysis:
+    import numpy as np
+    import pickle
+    from sklearn.utils import gen_batches
 
-# analysis
-if False:
-    dd = []
-    for i in range(25000):
+    batch_size = 32
+    threshold = 100
+    total = 0
+    total_was_feasible = 0
+    total_made_feasible = 0
+    total_destroyed = 0
+    total_kept_feasible = 0
+
+    for i, batch in enumerate(gen_batches(n_initial, batch_size)):
         fn = f"results/{i}.p"
+
         if not os.path.isfile(fn):
-            continue
+            break
+
         with open(fn, "rb") as f:
-            dd.append(pickle.load(f))
+            d = pickle.load(f)
 
-    for transform in ["square", "exp", "piece_exp"]:
-        destroyed = 0
-        kept_feasible = 0
-        made = 0
-        for d in dd:
-            i = d["i"]
-            ev = [e for e in d["evals"] if e["transform"] == transform][0]
+        was_feasible = (d["y_prime"] > 0).all(axis=1)
+        believed_feasible = (d["y_pred"] > 0).all(axis=1)
+        is_feasible = np.array([(e[-1] > 0).all() for e in d["evals"]])
 
-            was_feasible = (d["y_prime"] > 0).all()
-            believed_feasible = (d["y_pred"] > 0).all()
-            made_feasible = (ev["xy_true"][-1] > 0).all()
+        destroyed = np.zeros_like(was_feasible, dtype=int)
+        kept_feasible = np.zeros_like(was_feasible, dtype=int)
+        made_feasible = np.zeros_like(was_feasible, dtype=int)
 
-            if not was_feasible and made_feasible:
-                made += 1
-            elif was_feasible and not believed_feasible and not made_feasible:
-                destroyed += 1
-                print(
-                    "destroyed ", i, " which was believed feasible: ", believed_feasible
-                )
-            elif was_feasible and not believed_feasible and made_feasible:
-                kept_feasible += 1
+        made_feasible[(~was_feasible) & is_feasible] = 1
+        destroyed[(was_feasible) & (~believed_feasible) & (~is_feasible)] = 1
+        kept_feasible[(was_feasible) & (~believed_feasible) & is_feasible] = 1
 
-        print("TRANSFORM: ", transform, " - out of ", len(dd), " ---------")
-        print("Destroyed", destroyed)
-        print("Kept feasible", kept_feasible)
-        print("Made feasible", made)
+        total += len(d["y_prime"])
+        total_was_feasible += was_feasible.sum()
+        total_made_feasible += made_feasible.sum()
+        total_destroyed += destroyed.sum()
+        total_kept_feasible += kept_feasible.sum()
 
+    print("Total", total)
+    print("Was feasible", total_was_feasible)
+    print("Destroyed", total_destroyed)
+    print("Kept feasible", total_kept_feasible)
+    print("Made feasible", total_made_feasible)
+
+# %%
+n_initial = 25000
+analysis = True
 # %%
