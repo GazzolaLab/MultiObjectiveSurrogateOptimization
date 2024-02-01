@@ -3,6 +3,16 @@ import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
+def apply_bounds(tensor, bounds):
+    return tf.stack(
+        [
+            tf.clip_by_value(tensor[:, i], bounds[i][0], bounds[i][1])
+            for i in range(len(bounds))
+        ],
+        axis=1,
+    )
+
+
 class MLP(tf.keras.models.Sequential):
     def __init__(
         self,
@@ -51,7 +61,7 @@ class MLP(tf.keras.models.Sequential):
         )
 
     def make_feasible(
-        self, X, learning_rate=0.1, transform="square", max_iterations=1e5, verbose=0
+        self, X, learning_rate=0.1, transform="square", max_iterations=100, verbose=0
     ):
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
@@ -59,60 +69,72 @@ class MLP(tf.keras.models.Sequential):
         for layer in self.layers:
             layer.trainable = False
 
+        input_sample = tf.Variable(
+            initial_value=X,
+            dtype=tf.float32,
+            name="inverse_X",
+        )
+        steps = tf.Variable(
+            initial_value=tf.ones([X.shape[0]], dtype=np.int32) * -1,
+            dtype=tf.int32,
+            name="steps",
+        )
+
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         loss_fn = tf.keras.losses.BinaryFocalCrossentropy()
 
-        self.inverse_input_sample.assign(X)
-
-        step = 0
+        iteration = 0
         while True:
             with tf.GradientTape() as tape:
-                tape.watch(self.inverse_input_sample)
+                tape.watch(input_sample)
 
                 # reparametrize to ensure positivity
                 if isinstance(transform, (list, tuple)):
-                    z = self.inverse_input_sample
+                    z = input_sample
                 elif transform == "square":
-                    z = tf.square(self.inverse_input_sample)
+                    z = tf.square(input_sample)
                 elif transform == "exp":
-                    z = tf.exp(self.inverse_input_sample)
+                    z = tf.exp(input_sample)
                 elif transform == "piece_exp":
                     z = tf.where(
-                        self.inverse_input_sample > 0,
-                        self.inverse_input_sample + 1,
-                        tf.exp(self.inverse_input_sample),
+                        input_sample > 0,
+                        input_sample + 1,
+                        tf.exp(input_sample),
                     )
                 else:
                     raise ValueError(f"Invalid transform! {transform}")
 
                 prediction = self(z)
                 loss = loss_fn(
-                    tf.constant(np.ones([1, self.num_constraints]), dtype=tf.float32),
+                    tf.constant(
+                        np.ones([input_sample.shape[0], self.num_constraints]),
+                        dtype=tf.float32,
+                    ),
                     prediction,
                 )
 
-            if loss < 1e-10 or step > max_iterations:
+            if iteration > max_iterations:
                 break
 
-            grads = tape.gradient(loss, self.inverse_input_sample)
-            optimizer.apply_gradients([(grads, self.inverse_input_sample)])
+            grads = tape.gradient(loss, input_sample)
+
+            is_feasible = tf.math.reduce_all(prediction > 0.99, axis=1)
+
+            # record number of steps for feasible samples
+            steps = tf.where(is_feasible, steps, iteration)
+
+            # zero out grads for samples that are feasible
+            is_feasible_where = tf.tile(
+                tf.expand_dims(is_feasible, axis=1), [1, grads.shape[1]]
+            )
+            grads = tf.where(is_feasible_where, tf.zeros_like(grads), grads)
+
+            optimizer.apply_gradients([(grads, input_sample)])
 
             if isinstance(transform, (list, tuple)):
-                v = self.inverse_input_sample.numpy()
-                min_max_vals = np.array(transform)
-                assert min_max_vals.shape == (self.num_parameters, 2)
-                min_vals, max_vals = min_max_vals[:, 0], min_max_vals[:, 1]
-                clipped_v = np.maximum(min_vals, np.minimum(max_vals, v))
-                self.inverse_input_sample.assign(clipped_v)
+                input_sample.assign(apply_bounds(input_sample, transform))
 
-            step += 1
-            if verbose:
-                # if step % 10 == 0:
-                p = np.array2string(
-                    prediction.numpy()[0],
-                    formatter={"float_kind": lambda x: "%.2f" % x},
-                )
-                print(f"Step {step}, Loss: {loss.numpy()}, {p}")
+            iteration += 1
 
         for layer in self.layers:
             layer.trainable = True
@@ -123,23 +145,19 @@ class MLP(tf.keras.models.Sequential):
 
         # inverse-transform
         if transform == "square":
-            zp = np.square(self.inverse_input_sample.numpy())
+            zp = np.square(input_sample.numpy())
         elif transform == "exp":
-            zp = np.exp(self.inverse_input_sample.numpy())
+            zp = np.exp(input_sample.numpy())
         elif transform == "piece_exp":
             zp = np.where(
-                self.inverse_input_sample.numpy() > 0,
-                self.inverse_input_sample.numpy() + 1,
-                np.exp(self.inverse_input_sample.numpy()),
+                input_sample.numpy() > 0,
+                input_sample.numpy() + 1,
+                np.exp(input_sample.numpy()),
             )
         else:
-            zp = self.inverse_input_sample.numpy()
+            zp = input_sample.numpy()
 
-        if np.any(np.isnan(zp)) or np.any(np.isinf(zp)) or np.any(zp == 0.0):
-            # invalid optimization
-            return X, False
-
-        return zp, step
+        return zp, steps.numpy()
 
     def global_accuracy(self, y_true, y_pred):
         y_true = tf.cast(y_true, tf.bool)
