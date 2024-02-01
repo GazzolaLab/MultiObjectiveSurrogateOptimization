@@ -53,6 +53,9 @@ class MLP(tf.keras.models.Sequential):
     def make_feasible(
         self, X, learning_rate=0.1, transform="square", max_iterations=1e5, verbose=0
     ):
+        if len(X.shape) == 1:
+            X = X.reshape(1, -1)
+
         for layer in self.layers:
             layer.trainable = False
 
@@ -67,7 +70,9 @@ class MLP(tf.keras.models.Sequential):
                 tape.watch(self.inverse_input_sample)
 
                 # reparametrize to ensure positivity
-                if transform == "square":
+                if isinstance(transform, (list, tuple)):
+                    z = self.inverse_input_sample
+                elif transform == "square":
                     z = tf.square(self.inverse_input_sample)
                 elif transform == "exp":
                     z = tf.exp(self.inverse_input_sample)
@@ -92,6 +97,14 @@ class MLP(tf.keras.models.Sequential):
             grads = tape.gradient(loss, self.inverse_input_sample)
             optimizer.apply_gradients([(grads, self.inverse_input_sample)])
 
+            if isinstance(transform, (list, tuple)):
+                v = self.inverse_input_sample.numpy()
+                min_max_vals = np.array(transform)
+                assert min_max_vals.shape == (self.num_parameters, 2)
+                min_vals, max_vals = min_max_vals[:, 0], min_max_vals[:, 1]
+                clipped_v = np.maximum(min_vals, np.minimum(max_vals, v))
+                self.inverse_input_sample.assign(clipped_v)
+
             step += 1
             if verbose:
                 # if step % 10 == 0:
@@ -104,9 +117,9 @@ class MLP(tf.keras.models.Sequential):
         for layer in self.layers:
             layer.trainable = True
 
-        if step == 0 or np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
-            # sample is believed to be already feasible or is invalid
-            return X, 0
+        if np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
+            # invalid optimization
+            return X, False
 
         # inverse-transform
         if transform == "square":
@@ -119,9 +132,12 @@ class MLP(tf.keras.models.Sequential):
                 self.inverse_input_sample.numpy() + 1,
                 np.exp(self.inverse_input_sample.numpy()),
             )
+        else:
+            zp = self.inverse_input_sample.numpy()
 
         if np.any(np.isnan(zp)) or np.any(np.isinf(zp)) or np.any(zp == 0.0):
-            return X, 0
+            # invalid optimization
+            return X, False
 
         return zp, step
 
