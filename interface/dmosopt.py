@@ -113,13 +113,14 @@ class Dmosopt(Component):
                 ],
                 "surrogate_method_kwargs": Dict,
                 "surrogate_custom_training": Optional[str],
-                "optimizer_name": Literal["nsga2", "age", "smpso", "cmaes"],
+                "optimizer_name": Union[Literal["nsga2", "age", "smpso", "cmaes"], str],
                 "optimizer_kwargs": Dict,
                 "sensitivity_method_name": Literal["dgsm", "fast"],
                 "sensitivity_method_kwargs": Dict,
                 "local_random": Any,
                 "random_seed": Optional[int],
-                "feasibility_model": bool,
+                "feasibility_method_name": Optional[str],
+                "feasibility_method_kwargs": Dict,
                 "termination_conditions": Optional[Dict],
                 #
                 "di_crossover": Any,  #
@@ -162,6 +163,7 @@ class Dmosopt(Component):
                     config.default_surrogate_methods,
                     "surrogate_method_kwargs",
                 ),
+                ("feasibility_method_name", config.default_feasibility_methods, "feasibility_method_kwargs"),
                 ("surrogate_custom_training", {}, None),
                 ("optimizer_name", config.default_optimizers, "optimizer_kwargs"),
                 (
@@ -178,7 +180,7 @@ class Dmosopt(Component):
                         obj = config.import_object_by_path(target)
                     except ImportError as _ex:
                         raise ValueError(
-                            f"Could not resolve import path '{target}' for '{path}'"
+                            f"Could not resolve import path '{target}' for '{path}': {_ex}"
                         ) from _ex
 
                     if (d := payload.get(kw, None)) is not None:
