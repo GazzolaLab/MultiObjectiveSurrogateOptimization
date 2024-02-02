@@ -169,12 +169,12 @@ if analysis:
     print("Made feasible", total_made_feasible)
     print("Wrong believes", total_wrong_believes)
 
-    was_feasible_all = np.concatenate(was_feasible_all)
-    believed_feasible_all = np.concatenate(believed_feasible_all)
-    is_feasible_all = np.concatenate(is_feasible_all)
-    destroyed_all = np.concatenate(destroyed_all)
+    was_feasible_all = np.concatenate(was_feasible_all)[:2500]
+    believed_feasible_all = np.concatenate(believed_feasible_all)[:2500]
+    is_feasible_all = np.concatenate(is_feasible_all)[:2500]
+    destroyed_all = np.concatenate(destroyed_all)[:2500]
 
-    iterations = np.arange(len(was_feasible_all))
+    iterations = np.arange(len(was_feasible_all)) + 25000
     y_offset = np.ones(len(was_feasible_all))
     y_offset_factor = [8, 6, 4, 2]
 
@@ -221,7 +221,7 @@ if analysis:
         y_offset_factor,
         [
             f"Was feasible ({total_was_feasible})",
-            f"Believed feasible ({(believed_feasible_all > 0).sum()})",
+            f"Predicted as feasible ({(believed_feasible_all > 0).sum()})",
             f"Now Feasible ({(is_feasible_all > 0).sum()})",
             f"Now Infeasible ({(destroyed_all > 0).sum()})",
         ],
