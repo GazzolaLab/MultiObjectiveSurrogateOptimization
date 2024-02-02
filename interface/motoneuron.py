@@ -78,7 +78,8 @@ class Motoneuron(Dmosopt):
                 "resample_fraction": 1.0,  # times the population_size
                 "surrogate_method_name": None,  # megp , gpr, None,
                 "surrogate_method_kwargs": {},
-                "feasibility_model": False,
+                "feasibility_method_name": None,
+                "feasibility_method_kwargs": {},
                 "save": True,
                 "save_surrogate_evals": True,
             }
