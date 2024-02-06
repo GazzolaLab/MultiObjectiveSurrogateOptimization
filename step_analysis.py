@@ -3,13 +3,13 @@ import os
 import pickle
 import multiprocessing
 import numpy as np
+from matplotlib import pyplot as plt
 from machinable import get
 from dmosopt.MOASMO import xinit
 from models.mlp import MLP, apply_bounds
 import tensorflow as tf
 
 # %%
-
 mn = get("interface.motoneuron")
 
 model = MLP(
@@ -21,6 +21,53 @@ model = MLP(
 # %%
 
 model.load_weights("model.h5")
+
+# %%
+
+name = "first"
+
+if os.path.isfile(f"results/step_analysis/{name}.p"):
+    with open(f"results/step_analysis/{name}.p", "rb") as f:
+        dd = pickle.load(f)
+
+        # as subplots
+        fig, axs = plt.subplots(6, 1, figsize=(10, 15), sharex=True)
+        for ei in range(5):
+            e = dd["evals"][ei]
+            steps = dd["steps"][ei]
+            trajectory = dd["trajectory"]
+            x = np.arange(len(e))
+            y = [(_e[-1] > 0.99).sum() if k <= steps +1000000 else np.nan for k, _e in enumerate(e)]
+            y_model = [(model.predict(_e[ei], verbose=0) > 0.99).sum() for _e in trajectory]
+            axs[ei].plot(x, y, label=f"True", )
+            axs[ei].plot(np.arange(len(y_model)), y_model, label=f"Prediction", color="deeppink")
+            axs[ei].set_yticks(range(len(e[0][-1]) + 1))
+            axs[ei].set_ylim(0, len(e[0][-1]) + 1)
+            axs[ei].hlines(
+                len(e[0][-1]), 0, len(e), linestyles="dashed", colors="green", label="Break-even"
+            )
+            if steps < len(e):
+                axs[ei].vlines(
+                    steps+1,
+                    0,
+                    len(e[0][-1]),
+                    linestyles="dashed",
+                    colors="orange",
+                    label="Converged early",
+                )
+            axs[ei].set_ylabel("Number of fulfilled constraints")
+        axs[-2].set_xlabel("Updates")
+        axs[5].axis("off")
+        handles, labels = axs[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.1, 0.1))
+        plt.tight_layout()
+        plt.show()
+        
+
+# %%
+    exit()
+# %%
+
 
 # %%
 space_bounds = list(mn.config.dopt_params.space.values())
@@ -138,10 +185,6 @@ for i, t_sample in enumerate(trajectory):
 
 # %%
 
-name = f"50-steps"
-
-# %%
-
 with open(f"results/step_analysis/{name}.p", "wb") as f:
     pickle.dump(
         {
@@ -151,71 +194,3 @@ with open(f"results/step_analysis/{name}.p", "wb") as f:
         },
         f,
     )
-
-
-# %%
-import pickle
-
-with open(f"results/step_analysis/{name}.p", "rb") as f:
-    dd = pickle.load(f)
-
-# %%
-from matplotlib import pyplot as plt
-import numpy as np
-
-for ei in range(5):
-    e = dd["evals"][ei]
-    steps = dd["steps"][ei]
-    x = np.arange(len(e))
-    y = [(_e[-1] > 0.99).sum() if k <= steps else np.nan for k, _e in enumerate(e)]
-    plt.plot(x, y, label=f"Sample {ei}")
-    plt.yticks(range(len(e[0][-1]) + 1))
-    plt.ylim(0, len(e[0][-1]) + 1)
-    plt.hlines(
-        len(e[0][-1]), 0, len(e), linestyles="dashed", colors="green", label="Feasible"
-    )
-    if steps < len(e):
-        plt.vlines(
-            steps,
-            0,
-            len(e[0][-1]),
-            linestyles="dashed",
-            colors="orange",
-            label="Converged early",
-        )
-    plt.legend()
-    plt.ylabel("Number of fulfilled constraints")
-    plt.xlabel("Iteration")
-    plt.show()
-# %%
-
-# as subplots
-fig, axs = plt.subplots(6, 1, figsize=(10, 15), sharex=True)
-for ei in range(5):
-    e = dd["evals"][ei]
-    steps = dd["steps"][ei]
-    x = np.arange(len(e))
-    y = [(_e[-1] > 0.99).sum() if k <= steps else np.nan for k, _e in enumerate(e)]
-    axs[ei].plot(x, y, label=f"Sample {ei}")
-    axs[ei].set_yticks(range(len(e[0][-1]) + 1))
-    axs[ei].set_ylim(0, len(e[0][-1]) + 1)
-    axs[ei].hlines(
-        len(e[0][-1]), 0, len(e), linestyles="dashed", colors="green", label="Feasible"
-    )
-    if steps < len(e):
-        axs[ei].vlines(
-            steps,
-            0,
-            len(e[0][-1]),
-            linestyles="dashed",
-            colors="orange",
-            label="Converged early",
-        )
-    axs[ei].set_ylabel("Number of fulfilled constraints")
-axs[-2].set_xlabel("Iteration")
-axs[5].axis("off")
-handles, labels = axs[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.1, 0.1))
-plt.tight_layout()
-plt.show()
-# %%
