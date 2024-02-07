@@ -37,18 +37,34 @@ if os.path.isfile(f"results/step_analysis/{name}.p"):
             steps = dd["steps"][ei]
             trajectory = dd["trajectory"]
             x = np.arange(len(e))
-            y = [(_e[-1] > 0.99).sum() if k <= steps +1000000 else np.nan for k, _e in enumerate(e)]
-            y_model = [(model.predict(_e[ei], verbose=0) > 0.99).sum() for _e in trajectory]
-            axs[ei].plot(x, y, label=f"True", )
-            axs[ei].plot(np.arange(len(y_model)), y_model, label=f"Prediction", color="deeppink")
+            y = [
+                (_e[-1] > 0.99).sum() if k <= steps + 1000000 else np.nan
+                for k, _e in enumerate(e)
+            ]
+            y_model = [
+                (model.predict(_e[ei], verbose=0) > 0.99).sum() for _e in trajectory
+            ]
+            axs[ei].plot(
+                x,
+                y,
+                label=f"True",
+            )
+            axs[ei].plot(
+                np.arange(len(y_model)), y_model, label=f"Prediction", color="deeppink"
+            )
             axs[ei].set_yticks(range(len(e[0][-1]) + 1))
             axs[ei].set_ylim(0, len(e[0][-1]) + 1)
             axs[ei].hlines(
-                len(e[0][-1]), 0, len(e), linestyles="dashed", colors="green", label="Break-even"
+                len(e[0][-1]),
+                0,
+                len(e),
+                linestyles="dashed",
+                colors="green",
+                label="Break-even",
             )
             if steps < len(e):
                 axs[ei].vlines(
-                    steps+1,
+                    steps + 1,
                     0,
                     len(e[0][-1]),
                     linestyles="dashed",
@@ -62,9 +78,8 @@ if os.path.isfile(f"results/step_analysis/{name}.p"):
         fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.1, 0.1))
         plt.tight_layout()
         plt.show()
-        
 
-# %%
+    # %%
     exit()
 # %%
 
