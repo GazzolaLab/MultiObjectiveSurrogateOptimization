@@ -1,6 +1,10 @@
+import logging
 import numpy as np
 from math import cos, pi
 from dmosopt import dmosopt
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Numerical Integration of a 4D wilson-cowan system, simulating dentate gyrus population rate activity
 # Code based on https://github.com/selenasingh/DG-Oscillations
@@ -233,10 +237,10 @@ def obj_fun(pp):
     feature_values = np.asarray(
         [
             (
-                np.mean(res["g"]),
-                np.mean(res["b"]),
-                np.mean(res["m"]),
-                np.mean(res["h"]),
+                np.mean(output["g"]),
+                np.mean(output["b"]),
+                np.mean(output["m"]),
+                np.mean(output["h"]),
             )
         ],
         dtype=np.dtype(feature_dtypes),
@@ -297,6 +301,7 @@ def optimize():
     }
 
     best = dmosopt.run(dmosopt_params, verbose=True)
+    return best
 
 
     
@@ -333,9 +338,15 @@ def plot_DG_rates(network_model, results):
 
 if __name__ == "__main__":
 
-    network_model = DGRate(PP_freq='theta', fbi=1.65, PP_weight=1.0)
-    output = network_model.run()
-    plot_DG_rates(network_model, output)
+    best = optimize()
+    if best is not None:
+        
+        bestx, besty = best
+        bestx_dict = dict(bestx)
+
+        network_model = DGRate(PP_freq='theta', fbi=1.65, PP_weight=1.0, **bestx_dict)
+        output = network_model.run()
+        plot_DG_rates(network_model, output)
 
     
 
