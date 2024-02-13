@@ -338,7 +338,7 @@ class DGRate(object):
         ) / tau_m
         dh = (-h + self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)) / tau_h
 
-        logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
+        #logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
 
         return [dg, db, dm, dh]
 
