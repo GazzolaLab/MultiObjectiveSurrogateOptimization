@@ -67,9 +67,9 @@ class Dmosopt(Component):
                 "broker_fun_name": Optional[str],
                 "broker_module_name": Optional[str],
                 # DistOptimizer
-                "objective_names": List[str],
+                "objective_names": Union[str, List[str]],
                 "feature_dtypes": str,
-                "constraint_names": List[str],
+                "constraint_names": Union[str, List[str]],
                 "n_initial": int,
                 "initial_maxiter": int,
                 "initial_method": Union[
@@ -163,7 +163,11 @@ class Dmosopt(Component):
                     config.default_surrogate_methods,
                     "surrogate_method_kwargs",
                 ),
-                ("feasibility_method_name", config.default_feasibility_methods, "feasibility_method_kwargs"),
+                (
+                    "feasibility_method_name",
+                    config.default_feasibility_methods,
+                    "feasibility_method_kwargs",
+                ),
                 ("surrogate_custom_training", {}, None),
                 ("optimizer_name", config.default_optimizers, "optimizer_kwargs"),
                 (
@@ -172,6 +176,8 @@ class Dmosopt(Component):
                     "sensitivity_method_kwargs",
                 ),
                 ("feature_dtypes", {}, None),
+                ("objective_names", {}, None),
+                ("constraint_names", {}, None),
             ]:
                 if isinstance(target := payload.get(path, None), str):
                     if target in alias:
@@ -206,11 +212,14 @@ class Dmosopt(Component):
             params["file_path"] = self.output_filepath
         if "local_random" not in params and "random_seed" not in params:
             params["random_seed"] = self.seed
-        if "feature_dtypes" in params:
-            feature_dtypes = config.import_object_by_path(params["feature_dtypes"])
-            if callable(feature_dtypes):
-                feature_dtypes = feature_dtypes(self)
-            params["feature_dtypes"] = feature_dtypes
+        for f in ["feature_dtypes", "objective_names", "constraint_names"]:
+            # users may specify these fields in terms of importable objects
+            #  to avoid repetition or use custom types
+            if f in params and isinstance(f, str):
+                fi = config.import_object_by_path(params[f])
+                if callable(fi):
+                    fi = fi(self)
+                params[f] = fi
         dmosopt.run(
             dopt_params=params,
             time_limit=self.config.time_limit,
@@ -228,6 +237,15 @@ class Dmosopt(Component):
             worker_debug=self.config.worker_debug,
         )
 
+    def parameter_vector_to_dict(self, x, include_constants=True):
+        constants = {}
+        if include_constants:
+            constants = self.config.dopt_params.problem_parameters
+        return {
+            **constants,
+            **{k: x[n] for n, k in enumerate(self.config.dopt_params.space.keys())},
+        }
+
     def evaluate_objective_at(self, x):
         import logging
 
@@ -239,12 +257,7 @@ class Dmosopt(Component):
         else:
             obj_fun = config.import_object_by_path(self.config.dopt_params.obj_fun_name)
 
-        return obj_fun(
-            {
-                **self.config.dopt_params.problem_parameters,
-                **{k: x[n] for n, k in enumerate(self.config.dopt_params.space.keys())},
-            }
-        )
+        return obj_fun(self.parameter_vector_to_dict(x))
 
     @property
     def output_filepath(self) -> str:
@@ -267,16 +280,21 @@ class Dmosopt(Component):
 
         with h5py.File(filepath, "r") as h5:
             # constaints
-            constraint_enum = h5py.check_enum_dtype(
-                h5[f"{opt_id}/constraint_enum"].dtype
-            )
-            constraint_enum_T = {v: k for k, v in constraint_enum.items()}
-            constraint_names = [
-                constraint_enum_T[s[0]] for s in iter(h5[f"{opt_id}/constraint_spec"])
-            ]
-            constraints = pd.DataFrame(
-                h5[f"{opt_id}/{problem_id}/constraints"][:], columns=constraint_names
-            )
+            if "constraint_names" in self.config.dopt_params:
+                constraint_enum = h5py.check_enum_dtype(
+                    h5[f"{opt_id}/constraint_enum"].dtype
+                )
+                constraint_enum_T = {v: k for k, v in constraint_enum.items()}
+                constraint_names = [
+                    constraint_enum_T[s[0]]
+                    for s in iter(h5[f"{opt_id}/constraint_spec"])
+                ]
+                constraints = pd.DataFrame(
+                    h5[f"{opt_id}/{problem_id}/constraints"][:],
+                    columns=constraint_names,
+                )
+            else:
+                constraints = None
 
             # epochs
             epochs = h5[f"{opt_id}/{problem_id}/epochs"][:]
@@ -322,24 +340,23 @@ class Dmosopt(Component):
             "parameters": parameters,
             "predictions": predictions,
         }
-        
+
     def get_best(self, region=None):
         if region is None:
             region = slice(None)
         data = self.load_h5()
         X = data["parameters"].to_numpy()[region]
-        C = data["constraints"].to_numpy()[region]
+        if data["constraints"] is not None:
+            C = data["constraints"].to_numpy()[region]
+        else:
+            C = None
         objectives = data["objectives"].to_numpy()[region]
         f = data["features"][region]
-        best_x, best_y, best_f, best_c, best_epoch, perm = get_best(X, objectives, f, C, None, None)
-        
-        return {
-            "x": best_x,
-            "y": best_y,
-            "f": best_f,
-            "c": best_c,
-            "epoch": best_epoch
-        }
+        best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
+            X, objectives, f, C, None, None
+        )
+
+        return {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
 
     def dispatch_code_debug(self, inline=True, project_directory=None, python=None):
         from machinable import Project
