@@ -13,7 +13,6 @@ import inspect
 import h5py
 from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
-from dmosopt.hv import HyperVolume
 from dmosopt import indicators
 import matplotlib.pyplot as plt
 import numpy as np

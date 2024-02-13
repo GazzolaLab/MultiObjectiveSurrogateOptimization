@@ -55,6 +55,10 @@ class Dgrate(Dmosopt):
             }
         )
 
+    def get_model(self, fbi, PP_weight):
+        from benchmarks.DG_rate import DGRate
+        return DGRate(PP_freq="theta", fbi=fbi, PP_weight=PP_weight)
+
     def plot_rates(self, x=None):
         import matplotlib.pyplot as plt
         from benchmarks.DG_rate import DGRate
