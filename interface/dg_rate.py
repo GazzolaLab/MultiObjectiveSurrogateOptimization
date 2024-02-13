@@ -34,10 +34,13 @@ class Dgrate(Dmosopt):
                 # "constraint_names": "benchmarks.DG_rate.constraint_names",
                 "feature_dtypes": "benchmarks.DG_rate.feature_dtypes",
                 "optimizer_name": "nsga2",
-                # "optimizer_kwargs": {
-                #     "crossover_prob": 0.9,
-                #     "mutation_prob": 0.1,
-                # },
+                "optimizer_kwargs": [
+                    {
+                        "crossover_prob": 0.9,
+                        "mutation_prob": 0.1,
+                    },
+                    {},
+                ],
                 "initial_method": "slh",
                 "n_initial": 3,
                 "initial_maxiter": 10,
