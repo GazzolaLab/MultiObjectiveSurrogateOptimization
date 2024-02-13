@@ -2,7 +2,7 @@ import logging
 import numpy as np
 from math import cos, pi
 from scipy.integrate import solve_ivp
-from scipy import interpolate
+from scipy import interpolate, signal
 import time
 
 logging.basicConfig(level=logging.INFO)
@@ -387,7 +387,8 @@ class DGRate(object):
         """
         t_span = [range_t[0], range_t[-1]]
         y0 = [g_init, b_init, m_init, h_init]
-        t_eval = np.linspace(range_t[0], range_t[-1], len(range_t))
+        numpoints = kwargs.get("numpoints", len(range_t))
+        t_eval = np.linspace(range_t[0], range_t[-1], numpoints)
 
         sol = solve_ivp(
             self.system_dynamics,
@@ -439,6 +440,28 @@ class DGRate(object):
         params = self.parameters(**kwargs)
         g, b, m, h = self.simulate_DG(**params)
         return {"g": g, "b": b, "m": m, "h": h}
+
+    def compute_PSD(self, x, window_size=256, frequency_range=(0, 100.), overlap=0.9):
+
+        Fs = 1. / self.pars["dt"]
+        
+        nperseg    = window_size
+        win        = signal.get_window('hann', nperseg)
+        noverlap   = int(overlap * nperseg)
+
+        freqs, psd = signal.welch(x, fs=Fs, scaling='density', nperseg=nperseg, noverlap=noverlap,
+                                  window=win, return_onesided=True)
+
+        freqinds = np.where((freqs >= frequency_range[0]) & (freqs <= frequency_range[1]))
+
+        freqs = freqs[freqinds]
+        psd = psd[freqinds]
+        if np.all(psd):
+            psd = 10. * np.log10(psd)
+
+        peak_index = np.where(psd == np.max(psd))[0]
+
+        return freqs, psd, peak_index
 
     def _test_integration_method_equivalence(self, params=None, region=None):
         if params is None:
