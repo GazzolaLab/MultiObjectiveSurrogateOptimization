@@ -525,33 +525,33 @@ def obj_fun(pp):
 
     return res, feature_values
 
-import matplotlib.pyplot as plt
-network_model = DGRate(PP_freq="theta", fbi=1.65, PP_weight=3.5)
-output = network_model.run()
+# import matplotlib.pyplot as plt
+# network_model = DGRate(PP_freq="theta", fbi=1.65, PP_weight=3.0)
+# output = network_model.run()
 
-params = network_model.pars
+# params = network_model.pars
 
-g, b, m, h = (output[k] for k in ["g", "b", "m", "h"])
+# g, b, m, h = (output[k] for k in ["g", "b", "m", "h"])
 
-fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(4, 5))
+# fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(4, 5))
 
-ax1.plot(params["range_t"], h, color="0.5", label="HIPP")
-ax1.set_ylabel("HIPP")
+# ax1.plot(params["range_t"], h, color="0.5", label="HIPP")
+# ax1.set_ylabel("HIPP")
 
-ax2.plot(params["range_t"], b, color="0.5", label="BC")
-ax2.set_ylabel("BC")
+# ax2.plot(params["range_t"], b, color="0.5", label="BC")
+# ax2.set_ylabel("BC")
 
-ax3.plot(params["range_t"], m, color="0.5", label="MC")
-ax3.set_ylabel("MC")
+# ax3.plot(params["range_t"], m, color="0.5", label="MC")
+# ax3.set_ylabel("MC")
 
-ax4.plot(params["range_t"], g, color="0.5", label="GC")
-ax4.set_ylabel("GC")
+# ax4.plot(params["range_t"], g, color="0.5", label="GC")
+# ax4.set_ylabel("GC")
 
-ax5.plot(params["range_t"], params["PP_interp"](params["range_t"]), color="0.5", label="PP")
-ax5.set_ylabel("PP")
-ax5.set_xlabel("Time (ms)")
+# ax5.plot(params["range_t"], params["PP_interp"](params["range_t"]), color="0.5", label="PP")
+# ax5.set_ylabel("PP")
+# ax5.set_xlabel("Time (ms)")
 
-fig.tight_layout()
-fig.align_ylabels()
+# fig.tight_layout()
+# fig.align_ylabels()
 
-plt.show()
+# plt.show()
