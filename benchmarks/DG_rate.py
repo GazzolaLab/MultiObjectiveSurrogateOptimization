@@ -131,12 +131,10 @@ class DGRate(object):
           f     : the population activation response f(x) for input x
         """
 
-        # add the expression of f = F(x)
-        if np.isclose(i, 0.0):
-            f = 0
-        else:
-            f = 1 / ((1 + np.exp(-gain * (i - thresh))) - (1 + np.exp(gain * thresh)))
+        #    f = 1 / ((1 + np.exp(-gain * (i - thresh))) - (1 + np.exp(gain * thresh)))
 
+        f = 1.0 / (1.0 + np.exp(-gain * (i - thresh)))
+            
         return f
 
     def simulate_DG_euler(
@@ -340,7 +338,7 @@ class DGRate(object):
         ) / tau_m
         dh = (-h + self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)) / tau_h
 
-        #logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
+        logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
 
         return [dg, db, dm, dh]
 
@@ -429,6 +427,7 @@ class DGRate(object):
             ),
             method="BDF",
             max_step=0.01,
+            rtol=1e-4, atol=1e-6,
             t_eval=t_eval,
         )
 
@@ -526,7 +525,7 @@ def obj_fun(pp):
     return res, feature_values
 
 # import matplotlib.pyplot as plt
-# network_model = DGRate(PP_freq="theta", fbi=1.65, PP_weight=3.0)
+# network_model = DGRate(PP_freq="theta", fbi=1.65, PP_weight=1.0)
 # output = network_model.run()
 
 # params = network_model.pars
