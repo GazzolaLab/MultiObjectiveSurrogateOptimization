@@ -2,6 +2,7 @@ import logging
 import numpy as np
 from math import cos, pi
 from scipy.integrate import solve_ivp
+from scipy import interpolate
 import time
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,8 @@ class DGRate(object):
             )  # remove 2, get bifc'n
 
         self.pars["PP"] = periodic_forcing
+        self.pars["PP_interp"] = interpolate.Akima1DInterpolator(self.pars["range_t"],
+                                                                 periodic_forcing)
 
         return self.pars
 
@@ -78,17 +81,17 @@ class DGRate(object):
         # mc parameters
         params["tau_m"] = 3.5  # membrane timescale of mossy cell [ms]
         params["gain_m"] = 25  # gain of mossy cell
-        params["thresh_m"] = 0.005  # threshold of mossy cell
+        params["thresh_m"] = 0.01  # threshold of mossy cell
 
         # hc parameters
         params["tau_h"] = 1.5  # membrane timescale of hipp cell [ms]
         params["gain_h"] = 20  # gain of hipp cell
-        params["thresh_h"] = 0  # threshold of hipp cell
+        params["thresh_h"] = 0.0  # threshold of hipp cell
 
         # synaptic weights
         params["wgg"] = 0.0  # GC to GC   ; mossy fiber "sprouting"
-        params["wmg"] = 1.0  # MC to GC
-        params["wbg"] = 3  # BC to GC ; 1 for lesion study
+        params["wmg"] = 2.0  # MC to GC
+        params["wbg"] = 1.0  # BC to GC ; 1 for lesion study
         params["whg"] = 1.0  # HC to GC
         params["wbb"] = 1.0  # BC to BC
         params["wgb"] = 3.0  # GC to BC ; 0 for lesion study
@@ -96,10 +99,11 @@ class DGRate(object):
         params["whb"] = 1.0  # HC to BC
         params["wmm"] = 1.0  # MC to MC
         params["wgm"] = 1.0  # GC to MC
-        params["wbm"] = 1.0  # BC to MC
-        params["whm"] = 1.0  # HC to MC
+        params["wbm"] = 5.0  # BC to MC
+        params["whm"] = 3.0  # HC to MC
         params["wmh"] = 1.0  # MC to HC
         params["wgh"] = 1.0  # GC to HC
+        params["whh"] = 3.0  # HC to HC
 
         params["wPPg"] = 1  # scale PP synaptic weight to gcs
         params["wPPb"] = params["wPPg"] / 2  # scale PP synaptic input to bcs
@@ -128,7 +132,10 @@ class DGRate(object):
         """
 
         # add the expression of f = F(x)
-        f = (1 + np.exp(-gain * (i - thresh))) ** -1 - (1 + np.exp(gain * thresh)) ** -1
+        if np.isclose(i, 0.0):
+            f = 0
+        else:
+            f = 1 / ((1 + np.exp(-gain * (i - thresh))) - (1 + np.exp(gain * thresh)))
 
         return f
 
@@ -165,6 +172,7 @@ class DGRate(object):
         whm,
         wmh,
         wgh,
+        whh,
         # perforant path
         wPPg,
         wPPb,
@@ -248,7 +256,7 @@ class DGRate(object):
 
             # Calculate the derivative of the hipp cell population
             dh = (
-                dt / tau_h * (-h[k] + self.F(wmh * m[k] + wgh * g[k], gain_h, thresh_h))
+                dt / tau_h * (-h[k] + self.F(wmh * m[k] + wgh * g[k] - whh * h[k], gain_h, thresh_h))
             )
 
             # Update using Euler's method
@@ -289,6 +297,7 @@ class DGRate(object):
         whm,
         wmh,
         wgh,
+        whh,
         wPPg,
         wPPb,
         PP,
@@ -297,12 +306,23 @@ class DGRate(object):
         Defines the system of differential equations
         """
         g, b, m, h = y
-        PP_current = PP[int(t)] if int(t) < len(PP) else PP[-1]
+        PP_interp = self.pars["PP_interp"]
 
+        #logger.info(f"at time {t}: PP_interp(t): {PP_interp(t)} initial g: {g} b: {b} m: {m} h: {h}")
+        #logger.info(f"at time {t}: F(g): {self.F(wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t), gain_g, thresh_g,)}")
+        #logger.info(f"at time {t}: PP(g): {wPPg * PP_interp(t)}")
+        #logger.info(f"at time {t}: input(g): {wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t)}")
+        #logger.info(f"at time {t}: F(b): {self.F(-wbb * b + wgb * g + wmb * m - whb * h + wPPb * PP_interp(t), gain_b, thresh_b,)}")
+        #logger.info(f"at time {t}: F(m): {self.F(wmm * m + wgm * g - wbm * b - whm * h, gain_m, thresh_m)}")
+        #logger.info(f"at time {t}: F(h): {self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)}")
+        #logger.info(f"at time {t}: exc input m: {wmm * m + wgm * g}")
+        #logger.info(f"at time {t}: inh input m: {wbm * b + whm * h}")
+            
+        
         dg = (
             -g
             + self.F(
-                wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_current,
+                wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t),
                 gain_g,
                 thresh_g,
             )
@@ -310,7 +330,7 @@ class DGRate(object):
         db = (
             -b
             + self.F(
-                -wbb * b + wgb * g + wmb * m - whb * h + wPPb * PP_current,
+                -wbb * b + wgb * g + wmb * m - whb * h + wPPb * PP_interp(t),
                 gain_b,
                 thresh_b,
             )
@@ -318,7 +338,9 @@ class DGRate(object):
         dm = (
             -m + self.F(wmm * m + wgm * g - wbm * b - whm * h, gain_m, thresh_m)
         ) / tau_m
-        dh = (-h + self.F(wmh * m + wgh * g, gain_h, thresh_h)) / tau_h
+        dh = (-h + self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)) / tau_h
+
+        #logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
 
         return [dg, db, dm, dh]
 
@@ -350,6 +372,7 @@ class DGRate(object):
         whm,
         wmh,
         wgh,
+        whh,
         wPPg,
         wPPb,
         PP,
@@ -399,14 +422,18 @@ class DGRate(object):
                 whm,
                 wmh,
                 wgh,
+                whh,
                 wPPg,
                 wPPb,
                 PP,
             ),
-            method="RK45",
+            method="BDF",
+            max_step=0.01,
             t_eval=t_eval,
         )
 
+        assert(sol.success)
+        
         return sol.y
 
     def run(self, **kwargs):
@@ -497,3 +524,34 @@ def obj_fun(pp):
     )
 
     return res, feature_values
+
+import matplotlib.pyplot as plt
+network_model = DGRate(PP_freq="theta", fbi=1.65, PP_weight=3.5)
+output = network_model.run()
+
+params = network_model.pars
+
+g, b, m, h = (output[k] for k in ["g", "b", "m", "h"])
+
+fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(4, 5))
+
+ax1.plot(params["range_t"], h, color="0.5", label="HIPP")
+ax1.set_ylabel("HIPP")
+
+ax2.plot(params["range_t"], b, color="0.5", label="BC")
+ax2.set_ylabel("BC")
+
+ax3.plot(params["range_t"], m, color="0.5", label="MC")
+ax3.set_ylabel("MC")
+
+ax4.plot(params["range_t"], g, color="0.5", label="GC")
+ax4.set_ylabel("GC")
+
+ax5.plot(params["range_t"], params["PP_interp"](params["range_t"]), color="0.5", label="PP")
+ax5.set_ylabel("PP")
+ax5.set_xlabel("Time (ms)")
+
+fig.tight_layout()
+fig.align_ylabels()
+
+plt.show()
