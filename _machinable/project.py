@@ -20,6 +20,9 @@ class MultiObjectiveSurrogateOptimization(Project):
             try:
                 with open(os.path.expanduser("~/.globus-config.json"), 'r') as fp:
                     version = json.load(fp)
+                    for k in ['local_endpoint_directory', 'remote_endpoint_directory']:
+                        if k in version:
+                            version[k] = version[k].replace("{PROJECT_NAME}", "surrogate-optimization")
                 return [m,version], c
             except FileNotFoundError:
                 pass
@@ -30,7 +33,7 @@ class MultiObjectiveSurrogateOptimization(Project):
 
     def on_resolve_remotes(self):
         return {
-            "interface.storage.globus": "url+https://raw.githubusercontent.com/machinable-org/machinable/86045f0da6ef1a53b3d2421b44f878be380a54e5/docs/examples/globus-storage/globus.py",
+            "interface.storage.globus": "url+https://raw.githubusercontent.com/machinable-org/machinable/2942e1ba1a554c9443a058e2404f9d849307c41e/docs/examples/globus-storage/globus.py",
             "interface.execution.slurm": "url+https://raw.githubusercontent.com/machinable-org/machinable/86045f0da6ef1a53b3d2421b44f878be380a54e5/docs/examples/slurm-execution/slurm.py",
             "interface.execution.local": "url+https://raw.githubusercontent.com/machinable-org/machinable/86045f0da6ef1a53b3d2421b44f878be380a54e5/docs/examples/mpi-execution/mpi.py",
         }
