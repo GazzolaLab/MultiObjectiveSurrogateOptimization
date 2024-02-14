@@ -120,7 +120,7 @@ class Dmosopt(Component):
                 "random_seed": Optional[int],
                 "feasibility_method_name": Optional[str],
                 "feasibility_method_kwargs": Dict,
-                "termination_conditions": Optional[Dict],
+                "termination_conditions": Union[bool, Dict, None],
                 #
                 "di_crossover": Any,  #
                 "di_mutation": Any,  #
@@ -177,6 +177,7 @@ class Dmosopt(Component):
                 ("feature_dtypes", {}, None),
                 ("objective_names", {}, None),
                 ("constraint_names", {}, None),
+                ("metadata", {}, None),
             ]:
                 if isinstance(target := payload.get(path, None), str):
                     if target in alias:
@@ -211,7 +212,7 @@ class Dmosopt(Component):
             params["file_path"] = self.output_filepath
         if "local_random" not in params and "random_seed" not in params:
             params["random_seed"] = self.seed
-        for f in ["feature_dtypes", "objective_names", "constraint_names"]:
+        for f in ["feature_dtypes", "objective_names", "constraint_names", "metadata"]:
             # users may specify these fields in terms of importable objects
             #  to avoid repetition or use custom types
             if f in params and isinstance(params[f], str):

@@ -7,6 +7,20 @@ from typing import Literal
 import sys
 from mpi4py import MPI
 import time
+import importlib
+sys.modules['neuron_utils'] = importlib.import_module("benchmarks.motoneuron_modeling.neuron_utils")
+sys.modules['ephys_utils'] = importlib.import_module("benchmarks.motoneuron_modeling.ephys_utils")
+from benchmarks.motoneuron_modeling.protocol import ExperimentalProtocol
+from miv_simulator.mechanisms import load
+from scipy import optimize
+import benchmarks.motoneuron_modeling.ephys_utils as ephys
+from benchmarks.motoneuron_modeling.neuron_utils import (
+    ic_constant_f,
+    run_iclamp,
+    run_iclamp_steps,
+    run_vclamp,
+    load_template,
+)
 
 sys_excepthook = sys.excepthook
 
@@ -21,21 +35,138 @@ def mpi_excepthook(type, value, traceback):
 
 sys.excepthook = mpi_excepthook
 
-from miv_simulator.mechanisms import load
-from scipy import optimize
-import benchmarks.motoneuron_modeling.ephys_utils as ephys
-from benchmarks.motoneuron_modeling.neuron_utils import (
-    ic_constant_f,
-    run_iclamp,
-    run_iclamp_steps,
-    run_vclamp,
-    load_template,
-)
-
 SOURCE = os.path.dirname(ephys.__file__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanisms, model_variant, target_namespace, worker):
+    sys.modules['protocol'] = importlib.import_module("benchmarks.motoneuron_modeling.protocol")
+    from benchmarks.motoneuron_modeling.dmosopt_MN_nrn import make_obj_fun
+    
+    load(os.path.join(os.path.expandvars("$SCRATCH/mechanisms"), mechanisms))
+
+    if not hasattr(h, template_name):
+        load_template(
+            template_name, template_file=f"{SOURCE}/{template_name}.hoc"
+        )
+    
+    return make_obj_fun(
+        protocol_config_dict=protocol_config_dict,
+        feature_dtypes=feature_dtypes_from_protocol_config(
+            protocol_config_dict=protocol_config_dict,
+            target_namespace=target_namespace,
+        ),
+        template_name=template_name,
+        target_namespace=target_namespace,
+        worker=None
+    )
+
+def metadata_from_protocol(optimization):
+    protocol_config_dict = optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict
+    target_namespace = optimization.config.dopt_params.obj_fun_init_args.target_namespace
+    exp_protocol = ExperimentalProtocol(protocol_config_dict,
+                                        target_namespace=target_namespace)
+
+    N_exp = len(protocol_config_dict["Targets"]["f_I"]["I"])
+    if target_namespace is not None:
+        N_exp = len(protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"])
+
+    N_spk_amp = min(
+        len(exp_protocol.exp_i_lb_spk_amp), len(exp_protocol.exp_i_inj_amp_f_I)
+    )
+    N_spk_adpt = min(
+        len(exp_protocol.exp_i_lb_spk_adaptation), len(exp_protocol.exp_i_inj_amp_f_I)
+    )
+    obj_targets = {
+        "rn": (np.asarray(exp_protocol.target_rn, dtype=np.float32), np.float32, 2),
+        "tau": (np.asarray(exp_protocol.target_tau, dtype=np.float32), np.float32, 2),
+        "ISI_adaptation": (
+            np.row_stack(
+                (
+                    exp_protocol.exp_i_inj_amp_f_I[:N_spk_adpt],
+                    exp_protocol.exp_i_lb_spk_adaptation[:N_spk_adpt],
+                    exp_protocol.exp_i_ub_spk_adaptation[:N_spk_adpt],
+                )
+            ),
+            np.float32,
+            (3, N_exp),
+        ),
+        "fI": (
+            np.row_stack(
+                (
+                    exp_protocol.exp_i_inj_amp_f_I,
+                    exp_protocol.exp_i_lb_rate_f_I,
+                    exp_protocol.exp_i_ub_rate_f_I,
+                )
+            ),
+            np.float32,
+            (3, N_exp),
+        ),
+        "spike_amplitude": (
+            np.row_stack(
+                (
+                    exp_protocol.exp_i_inj_amp_f_I[:N_spk_amp],
+                    exp_protocol.exp_i_lb_spk_amp[:N_spk_amp],
+                    exp_protocol.exp_i_ub_spk_amp[:N_spk_amp],
+                )
+            ),
+            np.float32,
+            (3, N_exp),
+        ),
+    }
+    
+    return np.array(
+        [tuple((obj_targets[k][0] for k in sorted(obj_targets)))],
+        dtype=[
+            (f"{k}_target", obj_targets[k][1], obj_targets[k][2])
+            for k in sorted(obj_targets)
+        ],
+    )
+
+def feature_dtypes_from_protocol(optimization):
+    return feature_dtypes_from_protocol_config(
+        protocol_config_dict = optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict,
+        target_namespace = optimization.config.dopt_params.obj_fun_init_args.target_namespace,
+    )
+    
+def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
+    N_exp = len(protocol_config_dict["Targets"]["f_I"]["I"])
+    if target_namespace is not None:
+        N_exp = len(protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"])
+    feature_dtypes = [
+        (
+            "ic_constant_hold",
+            np.float32,
+        ),
+        (
+            "ic_constant_rest",
+            np.float32,
+        ),
+        (
+            'initial_v_error_hold',
+            np.float32,
+        ), 
+        (
+            "rn",
+            np.float32,
+        ),
+        (
+            "tau",
+            np.float32,
+        ),
+        ("fI", ephys.fi_value_dtype, N_exp),
+        ("mean_fI_diff", np.float32),
+        ("ISI", ephys.isi_value_dtype, N_exp),
+        ("threshold", np.float32, N_exp),
+        ("spike_amplitude", np.float32, N_exp),
+    ]
+    return feature_dtypes
+
+
+
+# --- hard-coded default objective / not used when using ~protocol ----------
 
 N_exp = len([20, 30, 40, 50, 60, 70, 80])
 

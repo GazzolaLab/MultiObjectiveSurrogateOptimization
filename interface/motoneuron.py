@@ -1,9 +1,10 @@
 import os
 
 from interface.dmosopt import Dmosopt
-from typing import Dict
+from typing import Dict, Optional
 from pydantic import Field
 from miv_simulator.mechanisms import compile
+import yaml
 
 MECHANISMS = compile(
     "./benchmarks/motoneuron_modeling/mechanisms",
@@ -75,6 +76,7 @@ class Motoneuron(Dmosopt):
                 "n_epochs": 10,
                 "population_size": 400,
                 "num_generations": 400,
+                "termination_conditions": True,
                 "resample_fraction": 1.0,  # times the population_size
                 "surrogate_method_name": None,  # megp , gpr, None,
                 "surrogate_method_kwargs": {},
@@ -84,3 +86,55 @@ class Motoneuron(Dmosopt):
                 "save_surrogate_evals": True,
             }
         )
+
+
+    def version_protocol(self, filepath: str, model_variant: str = "default", target_namespace: Optional[str] = None):
+        with open(filepath) as f:
+            protocol_config_dict = yaml.load(f, Loader=yaml.FullLoader)
+        
+        if 'best' in protocol_config_dict:
+            del protocol_config_dict['best']
+            
+        celltype = protocol_config_dict["Celltype"]
+        template_dict = protocol_config_dict.get("Template", None)
+        template_name = None
+        if template_dict is None:
+            template_name = "MN_nrn"
+        else:
+            if model_variant in template_dict:
+                template_name = template_dict[model_variant]["name"]
+            else:
+                raise ValueError(f"Unknown model variant {model_variant}")
+        
+        problem_parameters = protocol_config_dict["Parameters"]
+        variant_parameters_dict = protocol_config_dict.get("Variant Parameters", {})
+        if model_variant in variant_parameters_dict:
+            variant_parameters = variant_parameters_dict[model_variant]
+            for k in variant_parameters:
+                problem_parameters[k] = variant_parameters[k]
+                
+        space = protocol_config_dict["Space"]
+        variant_space_dict = protocol_config_dict.get("Variant Space", {})
+        if model_variant in variant_space_dict:
+            variant_space = variant_space_dict[model_variant]
+            for k in variant_space:
+                space[k] = variant_space[k]
+
+        return {
+            "dopt_params": {
+                "opt_id": f"dmosopt_{celltype}_neuron",
+                "obj_fun_init_name": "benchmarks.mn.protocol_obj_fun_init_adapter",
+                "obj_fun_init_args": {
+                    "protocol_config_dict": protocol_config_dict,
+                    "model_variant": model_variant,
+                    "target_namespace": target_namespace,
+                    "template_name": template_name,
+                },
+                "problem_parameters": problem_parameters,
+                "space": space,
+                "feature_dtypes": "benchmarks.mn.feature_dtypes_from_protocol",
+                "initial_maxiter": 10,
+                "surrogate_method_name": "gpr",
+                "metadata": "benchmarks.mn.metadata_from_protocol",
+            }
+        }
