@@ -214,7 +214,7 @@ class Dmosopt(Component):
         for f in ["feature_dtypes", "objective_names", "constraint_names"]:
             # users may specify these fields in terms of importable objects
             #  to avoid repetition or use custom types
-            if f in params and isinstance(f, str):
+            if f in params and isinstance(params[f], str):
                 fi = config.import_object_by_path(params[f])
                 if callable(fi):
                     fi = fi(self)
