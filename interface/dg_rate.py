@@ -1,0 +1,98 @@
+import os
+
+from interface.dmosopt import Dmosopt
+from typing import Dict
+from pydantic import Field
+
+
+class Dgrate(Dmosopt):
+    class Config(Dmosopt.Config):
+        dopt_params: Dict = Field(
+            default_factory=lambda: {
+                "opt_id": "default",
+                "obj_fun_name": "benchmarks.DG_rate.obj_fun",
+                "problem_parameters": {
+                    "fbi": 1.65,
+                    "PP_weight": 1.0,
+                },
+                "space": {
+                    "wmg": (0.1, 2.0),  # MC to GC
+                    "wbg": (3.0, 5.0),  # BC to GC
+                    "whg": (1.0, 5.0),  # HC to GC
+                    "wbb": (0.1, 1.0),  # BC to BC
+                    "wgb": (2.0, 5.0),  # GC to BC
+                    "wmb": (1.0, 5.0),  # MC to BC
+                    "whb": (0.1, 1.0),  # HC to BC
+                    "wmm": (0.1, 1.0),  # MC to MC
+                    "wgm": (0.1, 1.0),  # GC to MC
+                    "wbm": (1.0, 5.0),  # BC to MC
+                    "whm": (1.0, 5.0),  # HC to MC
+                    "wmh": (1.0, 2.0),  # MC to HC
+                    "wgh": (1.0, 2.0),  # GC to HC
+                },
+                "objective_names": "benchmarks.DG_rate.objective_names",
+                # "constraint_names": "benchmarks.DG_rate.constraint_names",
+                "feature_dtypes": "benchmarks.DG_rate.feature_dtypes",
+                "optimizer_name": "nsga2",
+                "optimizer_kwargs": [
+                    {
+                        "crossover_prob": 0.9,
+                        "mutation_prob": 0.1,
+                    },
+                    {},
+                ],
+                "initial_method": "slh",
+                "n_initial": 3,
+                "initial_maxiter": 10,
+                "n_epochs": 5,
+                "population_size": 400,
+                "num_generations": 400,
+                "resample_fraction": 1.0,
+                "surrogate_method_name": "gpr",
+                "surrogate_method_kwargs": {},
+                "save": True,
+                "save_surrogate_evals": True,
+            }
+        )
+
+    def get_model(self, fbi, PP_weight, PP_freq="theta"):
+        from benchmarks.DG_rate import DGRate
+        return DGRate(PP_freq=PP_freq, fbi=fbi, PP_weight=PP_weight)
+
+    def plot_rates(self, x=None):
+        import matplotlib.pyplot as plt
+        from benchmarks.DG_rate import DGRate
+
+        if x is None:
+            x = self.get_best()["x"][0]
+
+        network_model = DGRate(PP_freq="theta", **self.parameter_vector_to_dict(x))
+
+        output = network_model.run()
+
+        params = network_model.pars
+
+        g, b, m, h = (output[k] for k in ["g", "b", "m", "h"])
+
+        fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(4, 5))
+
+        ax1.plot(params["range_t"], h, color="0.5", label="HIPP")
+        ax1.set_ylabel("HIPP")
+
+        ax2.plot(params["range_t"], b, color="0.5", label="BC")
+        ax2.set_ylabel("BC")
+
+        ax3.plot(params["range_t"], m, color="0.5", label="MC")
+        ax3.set_ylabel("MC")
+
+        ax4.plot(params["range_t"], g, color="0.5", label="GC")
+        ax4.set_ylabel("GC")
+
+        ax5.plot(params["range_t"], params["PP"], color="0.5", label="PP")
+        ax5.set_ylabel("PP")
+        ax5.set_xlabel("Time (ms)")
+
+        fig.tight_layout()
+        fig.align_ylabels()
+
+        return fig
