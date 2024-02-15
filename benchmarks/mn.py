@@ -41,7 +41,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanisms, model_variant, target_namespace, worker):
+def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanisms, model_variant, target_namespace, worker=None):
     sys.modules['protocol'] = importlib.import_module("benchmarks.motoneuron_modeling.protocol")
     from benchmarks.motoneuron_modeling.dmosopt_MN_nrn import make_obj_fun
     
