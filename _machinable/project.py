@@ -1,8 +1,7 @@
-from typing import Optional, Tuple, Union
 from machinable import Project
-from machinable.element import Element
 import os
 import json
+
 
 class MultiObjectiveSurrogateOptimization(Project):
     def on_resolve_element(self, module):
@@ -14,19 +13,25 @@ class MultiObjectiveSurrogateOptimization(Project):
                     "preamble": '\n\n#export UCX_TLS="knem,dc_x"\n\nibrun',
                 },
             ], c
-            
+
         if module == "interface.storage.globus":
             m, c = super().on_resolve_element("interface.storage.globus")
             try:
-                with open(os.path.expanduser("~/.globus-config.json"), 'r') as fp:
+                with open(os.path.expanduser("~/.globus-config.json"), "r") as fp:
                     version = json.load(fp)
-                    for k in ['local_endpoint_directory', 'remote_endpoint_directory']:
+                    for k in ["local_endpoint_directory", "remote_endpoint_directory"]:
                         if k in version:
-                            version[k] = version[k].replace("{PROJECT_NAME}", "surrogate-optimization")
-                return [m,version], c
+                            version[k] = os.path.expanduser(
+                                os.path.expandvars(
+                                    version[k].replace(
+                                        "{PROJECT_NAME}", "surrogate-optimization"
+                                    )
+                                )
+                            )
+                return [m, version], c
             except FileNotFoundError:
                 pass
-            
+
             return m, c
 
         return super().on_resolve_element(module)

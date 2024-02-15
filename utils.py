@@ -3,6 +3,7 @@ import seaborn as sns
 from matplotlib.colors import LogNorm
 from matplotlib import pyplot as plt
 from sklearn.utils import resample
+from machinable import get, Index, Interface
 
 
 def balance_data(X, y, sampling_strategy="auto"):
@@ -75,3 +76,31 @@ def constraint_map(constraints, resolution=10):
     )
     plt.xlabel("Problem evaluations")
     plt.title("Percentage of feasible solutions")
+
+
+def globus_upload(interface, including_related: bool = True) -> None:
+    storage = get("interface.storage.globus")
+    storage.update(interface)
+
+    if not including_related:
+        return
+
+    for r in interface.related().all():
+        storage.update(r)
+
+
+def globus_download(uuid: str) -> bool:
+    index = Index.get()
+
+    if index.find_by_id(uuid):
+        return True
+
+    storage = get("interface.storage.globus")
+    target = index.local_directory(uuid, create=True)
+    if not storage.retrieve(uuid, target):
+        raise RuntimeError("Could not retrieve from storage")
+
+    interface = Interface.from_directory(target)
+    index.commit(interface.__model__)
+
+    return True

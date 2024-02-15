@@ -55,18 +55,22 @@ class Dgrate(Dmosopt):
             }
         )
 
-    def get_model(self, fbi, PP_weight, PP_freq="theta"):
+    def get_model(self, x=None, PP_freq="theta", **params):
         from benchmarks.DG_rate import DGRate
-        return DGRate(PP_freq=PP_freq, fbi=fbi, PP_weight=PP_weight)
-
-    def plot_rates(self, x=None):
-        import matplotlib.pyplot as plt
-        from benchmarks.DG_rate import DGRate
-
+        pp = {}
         if x is None:
-            x = self.get_best()["x"][0]
+            pp = params
+        else:
+            pp = {
+                **self.parameter_vector_to_dict(x),
+                **params
+            }
+        return DGRate(PP_freq=PP_freq, **pp)
 
-        network_model = DGRate(PP_freq="theta", **self.parameter_vector_to_dict(x))
+    def plot_rates(self, x=None, PP_freq="theta", **params):
+        import matplotlib.pyplot as plt
+
+        network_model = self.get_model(x, PP_freq, **params)
 
         output = network_model.run()
 
