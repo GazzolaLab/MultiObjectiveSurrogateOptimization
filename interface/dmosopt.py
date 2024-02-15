@@ -332,6 +332,11 @@ class Dmosopt(Component):
                 h5[f"{opt_id}/{problem_id}/predictions"][:], columns=objective_names
             )
 
+            # metadata
+            metadata = None
+            if f"/{opt_id}/metadata" in h5:
+                metadata = h5[f"/{opt_id}/metadata"][:]
+
         return {
             "constraints": constraints,
             "epochs": epochs,
@@ -339,9 +344,10 @@ class Dmosopt(Component):
             "objectives": objectives,
             "parameters": parameters,
             "predictions": predictions,
+            "metadata": metadata,
         }
 
-    def get_best(self, region=None):
+    def get_best(self, region=None, sort_by="-np.std(y, axis=1)"):
         if region is None:
             region = slice(None)
         data = self.load_h5()
@@ -356,7 +362,27 @@ class Dmosopt(Component):
             X, objectives, f, C, None, None
         )
 
-        return {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
+        if isinstance(sort_by, str):
+            context = {
+                "reduced": None,
+                "x": best_x,
+                "y": best_y,
+                "f": best_f,
+                "c": best_c,
+                "np": np,
+            }
+            exec(f"reduced={sort_by}", context)
+            sort_by = np.argsort(context["reduced"])
+
+        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
+
+        # apply sort
+        if sort_by is not None:
+            for k in best.keys():
+                if best[k] is not None:
+                    best[k] = best[k][sort_by]
+
+        return best
 
     def dispatch_code_debug(self, inline=True, project_directory=None, python=None):
         from machinable import Project

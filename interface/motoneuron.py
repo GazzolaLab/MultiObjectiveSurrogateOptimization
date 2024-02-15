@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from pydantic import Field
 from miv_simulator.mechanisms import compile
 import yaml
+import numpy as np
 
 MECHANISMS = compile(
     "./benchmarks/motoneuron_modeling/mechanisms",
@@ -87,14 +88,18 @@ class Motoneuron(Dmosopt):
             }
         )
 
-
-    def version_from_protocol(self, filepath: str = 'benchmarks/motoneuron_modeling/config/motoneuron.yaml', model_variant: str = "default", target_namespace: Optional[str] = None):
+    def version_from_protocol(
+        self,
+        filepath: str = "benchmarks/motoneuron_modeling/config/motoneuron.yaml",
+        model_variant: str = "default",
+        target_namespace: Optional[str] = None,
+    ):
         with open(filepath) as f:
             protocol_config_dict = yaml.load(f, Loader=yaml.FullLoader)
-        
-        if 'best' in protocol_config_dict:
-            del protocol_config_dict['best']
-            
+
+        if "best" in protocol_config_dict:
+            del protocol_config_dict["best"]
+
         celltype = protocol_config_dict["Celltype"]
         template_dict = protocol_config_dict.get("Template", None)
         template_name = None
@@ -105,14 +110,14 @@ class Motoneuron(Dmosopt):
                 template_name = template_dict[model_variant]["name"]
             else:
                 raise ValueError(f"Unknown model variant {model_variant}")
-        
+
         problem_parameters = protocol_config_dict["Parameters"]
         variant_parameters_dict = protocol_config_dict.get("Variant Parameters", {})
         if model_variant in variant_parameters_dict:
             variant_parameters = variant_parameters_dict[model_variant]
             for k in variant_parameters:
                 problem_parameters[k] = variant_parameters[k]
-                
+
         space = protocol_config_dict["Space"]
         variant_space_dict = protocol_config_dict.get("Variant Space", {})
         if model_variant in variant_space_dict:
@@ -138,3 +143,144 @@ class Motoneuron(Dmosopt):
                 "metadata": "benchmarks.mn.metadata_from_protocol",
             }
         }
+
+    def plot_features(
+        self, feature_selection="-np.std(y, axis=1)", metadata=None, fontsize="large"
+    ):
+        from matplotlib import pyplot as plt
+
+        if feature_selection is None or isinstance(feature_selection, str):
+            feature_selection = self.get_best(sort_by=feature_selection)["f"][0]
+        elif isinstance(feature_selection, int):
+            feature_selection = self.get_best()["f"][feature_selection]
+
+        if metadata is None:
+            metadata = self.load_h5()["metadata"]
+
+        # gridspec inside gridspec
+        fig = plt.figure(constrained_layout=True, figsize=(15, 4))
+        subfigs = fig.subfigures(1, 2, wspace=0.07, width_ratios=[1.1, 2])
+
+        axsLeft = subfigs[0].subplots(3, 1, sharey=False)
+        subfigs[0].set_facecolor("0.9")
+
+        ax = axsLeft[0]
+
+        rn_range = metadata["rn_target"].reshape((-1,))
+        ax.barh(0.5, rn_range[1] - rn_range[0], height=0.3, left=rn_range[0])
+        ax.plot(
+            feature_selection["rn"],
+            0.5,
+            linestyle="",
+            markersize=10,
+            marker="o",
+            color="#ff6600",
+            label="Rin",
+            markeredgecolor="k",
+        )
+        ax.set_xlim(200, 600)
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])
+        ax.set_xlabel("Input resistance [MOhm]", fontsize=fontsize)
+        ax.tick_params(axis="x", labelsize=fontsize)
+
+        ax = axsLeft[1]
+        tau_range = metadata["tau_target"].reshape((-1,))
+        ax.barh(0.5, tau_range[1] - tau_range[0], height=0.3, left=tau_range[0])
+        ax.plot(
+            feature_selection["tau"],
+            0.5,
+            linestyle="",
+            markersize=10,
+            marker="o",
+            color="#ff6600",
+            label="Rin",
+            markeredgecolor="k",
+        )
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])
+        ax.set_xlabel("Membrane time constant [ms]", fontsize=fontsize)
+        ax.tick_params(axis="x", labelsize=fontsize)
+
+        ax = axsLeft[2]
+        # threshold_range = metadata['threshold_target'].reshape((-1,))
+        # ax.barh(0.5, threshold_range[1]-threshold_range[0], height=0.3, left=threshold_range[0])
+        ax.plot(
+            np.mean(feature_selection["threshold"]),
+            0.5,
+            linestyle="",
+            markersize=10,
+            marker="o",
+            color="#ff6600",
+            label="threshold",
+            markeredgecolor="k",
+        )
+        ax.set_xlim(-80, -20)
+        ax.set_ylim(0, 1)
+        ax.set_yticks([])
+        ax.set_xlabel("Spike threshold [mV]", fontsize=fontsize)
+        ax.tick_params(axis="x", labelsize=fontsize)
+
+        # subfigs[0].suptitle('Left plots', fontsize='x-large')
+        axsRight = subfigs[1].subplots(
+            1, 2, sharex=False, gridspec_kw={"width_ratios": [1, 1]}
+        )
+        # subfigs[1].set_facecolor('0.9')
+
+        inj_amp_fI = metadata["fI_target"][0][0]
+        target_fI_lb = metadata["fI_target"][0][1]
+        target_fI_ub = metadata["fI_target"][0][2]
+
+        ax = axsRight[0]
+
+        ax.plot(
+            inj_amp_fI.astype("str"),
+            target_fI_lb,
+            marker="x",
+        )
+        ax.plot(
+            inj_amp_fI.astype("str"),
+            feature_selection["fI"],
+            linestyle="",
+            markersize=10,
+            marker="o",
+            color="#ff6600",
+            label="threshold",
+            markeredgecolor="k",
+        )
+
+        ax.set_title("Frequency-current relationship", fontsize=fontsize)
+        ax.set_xlabel("Injected current [nA]", fontsize=fontsize)
+        ax.set_ylabel("Frequency [Hz]", fontsize=fontsize)
+        ax.tick_params(axis="x", labelsize="x-small")
+        ax.tick_params(axis="y", labelsize="x-small")
+
+        inj_amp_ISI_adaptation = metadata["fI_target"][0][0]
+        target_ISI_adaptation_lb = metadata["ISI_adaptation_target"][0][1]
+        target_ISI_adaptation_ub = metadata["ISI_adaptation_target"][0][2]
+
+        ax = axsRight[1]
+        ax.bar(
+            inj_amp_ISI_adaptation.astype("str"),
+            height=target_ISI_adaptation_ub - target_ISI_adaptation_lb,
+            bottom=target_ISI_adaptation_lb,
+            width=0.3,
+        )
+        ax.plot(
+            inj_amp_ISI_adaptation.astype("str"),
+            feature_selection["ISI"]["ratio"],
+            linestyle="",
+            markersize=10,
+            marker="o",
+            color="#ff6600",
+            label="adaptation",
+            markeredgecolor="k",
+        )
+        ax.set_title("ISI adaptation", fontsize=fontsize)
+        ax.set_xlabel("Injected current [nA]", fontsize=fontsize)
+        ax.set_ylabel("ISI ratio last/first", fontsize=fontsize)
+        ax.tick_params(axis="x", labelsize="x-small")
+        ax.tick_params(axis="y", labelsize="x-small")
+
+        return fig

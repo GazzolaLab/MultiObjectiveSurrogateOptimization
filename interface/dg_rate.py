@@ -57,17 +57,12 @@ class Dgrate(Dmosopt):
 
     def get_model(self, x=None, PP_freq="theta", **params):
         from benchmarks.DG_rate import DGRate
+
         pp = {}
         if x is None:
-            pp = {
-                **self.config.dopt_params.problem_parameters,
-                **params
-            }
+            pp = {**self.config.dopt_params.problem_parameters, **params}
         else:
-            pp = {
-                **self.parameter_vector_to_dict(x),
-                **params
-            }
+            pp = {**self.parameter_vector_to_dict(x), **params}
         return DGRate(PP_freq=PP_freq, **pp)
 
     def plot_rates(self, x=None, PP_freq="theta", **params):
