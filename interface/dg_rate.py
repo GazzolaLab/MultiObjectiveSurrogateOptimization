@@ -59,7 +59,10 @@ class Dgrate(Dmosopt):
         from benchmarks.DG_rate import DGRate
         pp = {}
         if x is None:
-            pp = params
+            pp = {
+                **self.config.dopt_params.problem_parameters,
+                **params
+            }
         else:
             pp = {
                 **self.parameter_vector_to_dict(x),

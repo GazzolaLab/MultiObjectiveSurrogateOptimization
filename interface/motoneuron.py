@@ -88,7 +88,7 @@ class Motoneuron(Dmosopt):
         )
 
 
-    def version_protocol(self, filepath: str, model_variant: str = "default", target_namespace: Optional[str] = None):
+    def version_from_protocol(self, filepath: str = 'benchmarks/motoneuron_modeling/config/motoneuron.yaml', model_variant: str = "default", target_namespace: Optional[str] = None):
         with open(filepath) as f:
             protocol_config_dict = yaml.load(f, Loader=yaml.FullLoader)
         
