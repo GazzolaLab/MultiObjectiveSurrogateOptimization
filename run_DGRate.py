@@ -24,11 +24,11 @@ experiment = get(
 # if using manual download, uncomment following line
 # experiment = get('machinable.component').from_directory(YOUR DOWNLOAD PATH HERE)
 
-assert experiment.cached()
-
 # %%
 
 # Plot solution
+
+assert experiment.cached()
 
 selected_solution = experiment.get_best()["x"][1]
 

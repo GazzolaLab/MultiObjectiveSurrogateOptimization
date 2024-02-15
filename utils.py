@@ -96,7 +96,7 @@ def globus_download(uuid: str) -> bool:
         return True
 
     storage = get("interface.storage.globus")
-    target = index.local_directory(uuid, create=True)
+    target = index.local_directory(uuid)
     if not storage.retrieve(uuid, target):
         raise RuntimeError("Could not retrieve from storage")
 
