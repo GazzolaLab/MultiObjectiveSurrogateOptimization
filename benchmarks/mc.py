@@ -23,23 +23,6 @@ sys_excepthook = sys.excepthook
 sys.excepthook = mpi_excepthook
 
 
-def init_controller(subworld_size, use_coreneuron):
-    h.nrnmpi_init()
-    h("objref pc, cvode")
-    h.cvode = h.CVode()
-    h.pc = h.ParallelContext()
-    h.pc.subworlds(subworld_size)
-    if use_coreneuron:
-        from neuron import coreneuron
-
-        coreneuron.enable = True
-        coreneuron.verbose = 0
-        h.cvode.cache_efficient(1)
-        h.finitialize(-65)
-        h.pc.set_maxstep(10)
-        h.pc.psolve(0.05)
-
-
 def init_network_objfun(
     cells: str,
     connections: str,
@@ -48,13 +31,14 @@ def init_network_objfun(
     templates: str,
     mechanisms: str,
     use_coreneuron: bool,
+    worker=None,
 ):
     np.seterr(all="raise")
     mechanisms.load(mechanisms)
 
     # initialize the network
     h = simulator.configure_hoc(coreneuron=use_coreneuron)
-    env = simulator.ExecutionEnvironment()  # seed=self.seed)
+    env = simulator.ExecutionEnvironment(comm=worker.merged_comm)
     env.load_cells(
         filepath=cells,
         cell_types=cell_types,
@@ -67,6 +51,13 @@ def init_network_objfun(
     )
 
     return partial(network_objfun, env=env)
+
+
+def feature_dtypes(experiment):
+    return [
+        (feature_name, np.float32)
+        for feature_name in experiment.config.dopt_params.objective_names
+    ]
 
 
 def network_objfun(parameters, env):
