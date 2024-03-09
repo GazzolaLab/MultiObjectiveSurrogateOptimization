@@ -13,45 +13,51 @@ def apply_bounds(tensor, bounds):
     )
 
 
-class MLP(tf.keras.models.Sequential):
+class MLP(tf.keras.Model):
     def __init__(
         self,
         num_parameters,
         num_constraints,
         num_objectives,
         learning_rate=0.1,
+        joint=True,
+        **kwargs,
     ):
-        super().__init__()
+        super(MLP, self).__init__(**kwargs)
         self.num_parameters = num_parameters
         self.num_constraints = num_constraints
         self.num_objectives = num_objectives
+        self.joint = joint
 
         self.normalization_layer = tf.keras.layers.Normalization(
             input_shape=(num_parameters,)
         )
-
-        self.add(self.normalization_layer)
-        self.add(tf.keras.layers.Dense(100, activation="relu"))
-        self.add(tf.keras.layers.Dense(num_constraints, activation="sigmoid"))
+        self.hidden = tf.keras.layers.Dense(100, activation="relu")
+        self.objectives_output = tf.keras.layers.Dense(
+            num_objectives, activation="linear", name="objectives"
+        )
+        self.constraints_output = tf.keras.layers.Dense(
+            num_constraints, activation="sigmoid", name="constraints"
+        )
 
         self.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            loss="binary_crossentropy",
-            metrics=[
-                self.global_accuracy,
-            ],
-        )
-
-        self.default_callbacks = [
-            tf.keras.callbacks.EarlyStopping(
-                patience=50,
-                restore_best_weights=True,
-                monitor="val_global_accuracy",
-            )
-        ]
-
-        self.inverse_model = tf.keras.models.Model(
-            inputs=self.input, outputs=self.output
+            loss=(
+                {
+                    "objectives": tf.keras.losses.Huber(),
+                    "constraints": "binary_crossentropy",
+                }
+                if joint
+                else "binary_crossentropy"
+            ),
+            metrics=(
+                {
+                    "objectives": ["mae"],
+                    "constraints": ["acc"],
+                }
+                if joint
+                else [self.global_accuracy]
+            ),
         )
 
         self.inverse_input_sample = tf.Variable(
@@ -60,8 +66,123 @@ class MLP(tf.keras.models.Sequential):
             name="inverse_input",
         )
 
+        self.min_yR = tf.Variable(
+            initial_value=np.zeros([num_objectives]),
+            dtype=tf.float32,
+            name="min_yR",
+        )
+        self.max_yR = tf.Variable(
+            initial_value=np.zeros([num_objectives]),
+            dtype=tf.float32,
+            name="max_yR",
+        )
+
+    def call(self, inputs):
+        x = self.normalization_layer(inputs)
+        x = self.hidden(x)
+
+        if self.joint:
+            return {
+                "objectives": self.objectives_output(x),
+                "constraints": self.constraints_output(x),
+            }
+        else:
+            return self.constraints_output(x)
+
+    def fit(self, x=None, y=None, *args, callbacks=None, **kwargs):
+        # normalize inputs
+        self.normalization_layer.adapt(x)
+
+        if self.joint:
+            # normalize regression targets
+            yR = y["objectives"]
+            # mean_yR_train = np.mean(yR_train, axis=0)
+            # std_yR_train = np.std(yR_train, axis=0)
+            # yR_standardized = (yR_train - mean_yR_train) / std_yR_train
+            self.min_yR.assign(np.min(yR, axis=0))
+            self.max_yR.assign(np.max(yR, axis=0))
+
+            return super().fit(
+                x,
+                {"objectives": self.norm_output(yR), "constraints": y["constraints"]},
+                *args,
+                callbacks=callbacks,
+                **kwargs,
+            )
+        else:
+            return super().fit(x, y, *args, callbacks=callbacks, **kwargs)
+
+    def norm_output(self, yR, inverse=False):
+        if inverse:
+            return yR * (self.max_yR - self.min_yR) + self.min_yR
+        else:
+            return (yR - self.min_yR) / (self.max_yR - self.min_yR)
+
+    def eval(self, X_test, y_test, per_feature=False):
+        if self.joint:
+            assert (
+                not per_feature
+            ), "Joint model does not support per_feature evaluation"
+            y_pred = self.predict(X_test)
+
+            y_test_prime = y_test["constraints"].all(axis=1).astype(int)
+            y_pred_prime = (
+                (y_pred["constraints"] > 0.5).astype(int).all(axis=1).astype(int)
+            )
+
+            return {
+                "accuracy": accuracy_score(y_test_prime, y_pred_prime),
+                "precision": precision_score(y_test_prime, y_pred_prime),
+                "recall": recall_score(y_test_prime, y_pred_prime),
+                "f1": f1_score(y_test_prime, y_pred_prime),
+            }
+        else:
+            y_prob = self.predict(X_test)
+            y_pred = (y_prob > 0.5).astype(int)
+
+            y_test_prime = y_test.all(axis=1).astype(int)
+            y_pred_prime = y_pred.all(axis=1).astype(int)
+
+            if per_feature:
+                tbl = [["Constraint", "Precision", "Recall", "F1"]]
+                labels = per_feature
+                prec = precision_score(y_test, y_pred, average=None)
+                rec = recall_score(y_test, y_pred, average=None)
+                f1 = f1_score(y_test, y_pred, average=None)
+                for t in zip(labels, prec, rec, f1):
+                    tbl.append(t)
+                tbl.append(
+                    [
+                        "Total",
+                        precision_score(y_test_prime, y_pred_prime),
+                        recall_score(y_test_prime, y_pred_prime),
+                        f1_score(y_test_prime, y_pred_prime),
+                    ]
+                )
+                return tbl
+
+            return {
+                "accuracy": accuracy_score(y_test_prime, y_pred_prime),
+                "precision": precision_score(y_test_prime, y_pred_prime),
+                "recall": recall_score(y_test_prime, y_pred_prime),
+                "f1": f1_score(y_test_prime, y_pred_prime),
+            }
+
+    def global_accuracy(self, y_true, y_pred):
+        y_true = tf.cast(y_true, tf.bool)
+        y_pred = tf.cast(y_pred, tf.bool)
+        y_true = tf.cast(tf.cast(tf.reduce_all(y_true, axis=1), tf.int32), tf.float32)
+        y_pred = tf.cast(tf.cast(tf.reduce_all(y_pred, axis=1), tf.int32), tf.float32)
+        return tf.keras.metrics.binary_accuracy(y_true, y_pred)
+
     def make_feasible(
-        self, X, learning_rate=0.1, transform="square", max_iterations=100, verbose=0
+        self,
+        X,
+        learning_rate=0.1,
+        transform="square",
+        max_iterations=100,
+        verbose=0,
+        use_joint_loss=False,
     ):
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
@@ -105,20 +226,28 @@ class MLP(tf.keras.models.Sequential):
                     raise ValueError(f"Invalid transform! {transform}")
 
                 prediction = self(z)
+                logits = prediction
+                if self.joint:
+                    logits = prediction["constraints"]
                 loss = loss_fn(
                     tf.constant(
                         np.ones([input_sample.shape[0], self.num_constraints]),
                         dtype=tf.float32,
                     ),
-                    prediction,
+                    logits,
                 )
+                if self.joint and use_joint_loss:
+                    # add penalty for regression targets
+                    loss = loss + tf.reduce_sum(
+                        tf.math.maximum(prediction["objectives"], 0)
+                    )
 
             if iteration > max_iterations:
                 break
 
             grads = tape.gradient(loss, input_sample)
 
-            is_feasible = tf.math.reduce_all(prediction > 0.99, axis=1)
+            is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
 
             # record number of steps for feasible samples
             steps = tf.where(is_feasible, steps, iteration)
@@ -158,54 +287,3 @@ class MLP(tf.keras.models.Sequential):
             zp = input_sample.numpy()
 
         return zp, steps.numpy()
-
-    def global_accuracy(self, y_true, y_pred):
-        y_true = tf.cast(y_true, tf.bool)
-        y_pred = tf.cast(y_pred, tf.bool)
-        y_true = tf.cast(tf.cast(tf.reduce_all(y_true, axis=1), tf.int32), tf.float32)
-        y_pred = tf.cast(tf.cast(tf.reduce_all(y_pred, axis=1), tf.int32), tf.float32)
-        return tf.keras.metrics.binary_accuracy(y_true, y_pred)
-
-    def interactive(self):
-        from livelossplot import PlotLossesKeras
-
-        if len(self.default_callbacks) <= 1:
-            self.default_callbacks.append(PlotLossesKeras())
-
-    def fit(self, x=None, y=None, *args, callbacks=None, **kwargs):
-        self.normalization_layer.adapt(x)
-        if callbacks is None:
-            callbacks = self.default_callbacks
-        super().fit(x, y, *args, callbacks=callbacks, **kwargs)
-
-    def eval(self, X_test, y_test, per_feature=False):
-        y_prob = self.predict(X_test)
-        y_pred = (y_prob > 0.5).astype(int)
-
-        y_test_prime = y_test.all(axis=1).astype(int)
-        y_pred_prime = y_pred.all(axis=1).astype(int)
-
-        if per_feature:
-            tbl = [["Constraint", "Precision", "Recall", "F1"]]
-            labels = per_feature
-            prec = precision_score(y_test, y_pred, average=None)
-            rec = recall_score(y_test, y_pred, average=None)
-            f1 = f1_score(y_test, y_pred, average=None)
-            for t in zip(labels, prec, rec, f1):
-                tbl.append(t)
-            tbl.append(
-                [
-                    "Total",
-                    precision_score(y_test_prime, y_pred_prime),
-                    recall_score(y_test_prime, y_pred_prime),
-                    f1_score(y_test_prime, y_pred_prime),
-                ]
-            )
-            return tbl
-
-        return {
-            "accuracy": accuracy_score(y_test_prime, y_pred_prime),
-            "precision": precision_score(y_test_prime, y_pred_prime),
-            "recall": recall_score(y_test_prime, y_pred_prime),
-            "f1": f1_score(y_test_prime, y_pred_prime),
-        }
