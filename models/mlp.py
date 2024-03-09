@@ -287,3 +287,16 @@ class MLP(tf.keras.Model):
             zp = input_sample.numpy()
 
         return zp, steps.numpy()
+
+    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
+        X = tf.convert_to_tensor(X, dtype=tf.float32)
+        with tf.GradientTape(persistent=True) as tape:
+            tape.watch(X)
+            y_pred = self(X)
+
+        if self.joint:
+            return {
+                k: reduction(tape.gradient(y_pred[k], X)).numpy() for k in y_pred.keys()
+            }
+        else:
+            return reduction(tape.gradient(y_pred, X)).numpy()
