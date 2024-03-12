@@ -112,6 +112,7 @@ class Dmosopt(Component):
                 ],
                 "surrogate_method_kwargs": Dict,
                 "surrogate_custom_training": Optional[str],
+                "surrogate_custom_training_kwargs": Optional[Dict],
                 "optimizer_name": Union[Literal["nsga2", "age", "smpso", "cmaes"], str],
                 "optimizer_kwargs": Union[Dict, List[Dict]],
                 "sensitivity_method_name": Literal["dgsm", "fast"],
@@ -167,7 +168,7 @@ class Dmosopt(Component):
                     config.default_feasibility_methods,
                     "feasibility_method_kwargs",
                 ),
-                ("surrogate_custom_training", {}, None),
+                ("surrogate_custom_training", {}, 'surrogate_custom_training_kwargs'),
                 ("optimizer_name", config.default_optimizers, None),
                 (
                     "sensitivity_method_name",
