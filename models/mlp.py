@@ -89,6 +89,33 @@ class MLP(tf.keras.Model):
         else:
             return self.constraints_output(x)
 
+    def autofit(
+        self,
+        x,
+        y,
+        yC,
+        epochs=1000,
+        batch_size=2048,
+        validation_split=0.2,
+        verbose=1,
+        **kwargs,
+    ):
+        # todo: callbacks
+        if self.joint:
+            Y = {"objectives": y, "constraints": yC}
+        else:
+            Y = yC
+
+        return self.fit(
+            x,
+            Y,
+            epochs=epochs,
+            batch_size=batch_size,
+            validation_split=validation_split,
+            verbose=verbose,
+            **kwargs,
+        )
+
     def fit(self, x=None, y=None, *args, callbacks=None, **kwargs):
         # normalize inputs
         self.normalization_layer.adapt(x)
@@ -181,7 +208,7 @@ class MLP(tf.keras.Model):
         learning_rate=0.1,
         transform="square",
         max_iterations=100,
-        verbose=0,
+        max_steps_filter=None,
         use_joint_loss=False,
     ):
         if len(X.shape) == 1:
@@ -286,7 +313,22 @@ class MLP(tf.keras.Model):
         else:
             zp = input_sample.numpy()
 
-        return zp, steps.numpy()
+        steps = steps.numpy()
+
+        if max_steps_filter is True:
+            max_steps_filter = max_iterations - 2
+
+        if not max_steps_filter:
+            return zp, steps
+
+        # only use the samples where the steps where below cutoff
+        x_filtered = np.where(
+            np.tile(np.expand_dims(steps < max_steps_filter, 1), reps=X.shape[1]),
+            zp,
+            X,
+        )
+
+        return x_filtered, steps
 
     def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
