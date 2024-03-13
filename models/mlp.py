@@ -129,6 +129,10 @@ class MLP(tf.keras.Model):
         yC,
         verbose=2,
     ):
+        x = np.nan_to_num(x)
+        y = np.nan_to_num(y)
+        yC = np.nan_to_num(yC)
+        
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
         else:
@@ -180,6 +184,8 @@ class MLP(tf.keras.Model):
                 (y_pred["constraints"] > 0.5).astype(int).all(axis=1).astype(int)
             )
 
+            yR = np.nan_to_num(self.norm_output(y_pred["objectives"], inverse=True))
+
             return {
                 "accuracy": accuracy_score(y_test_prime, y_pred_prime),
                 "precision": precision_score(y_test_prime, y_pred_prime),
@@ -187,7 +193,7 @@ class MLP(tf.keras.Model):
                 "f1": f1_score(y_test_prime, y_pred_prime),
                 "objective_mae": mean_absolute_error(
                     y_test["objectives"],
-                    self.norm_output(y_pred["objectives"], inverse=True),
+                    np.maximum(np.zeros_like(yR), yR),
                 ),
             }
         else:
