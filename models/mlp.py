@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from sklearn.model_selection import KFold
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -33,6 +34,7 @@ class MLP(tf.keras.Model):
         self.num_parameters = num_parameters
         self.num_constraints = num_constraints
         self.num_objectives = num_objectives
+        self.learning_rate = learning_rate
         self.joint = joint
 
         self.normalization_layer = tf.keras.layers.Normalization(
@@ -84,6 +86,17 @@ class MLP(tf.keras.Model):
             name="max_yR",
         )
 
+        self._last_fit_epochs = -1
+
+    def new(self):
+        return self.__class__(
+            self.num_parameters,
+            self.num_constraints,
+            self.num_objectives,
+            self.learning_rate,
+            self.joint,
+        )
+
     def call(self, inputs):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
@@ -103,11 +116,14 @@ class MLP(tf.keras.Model):
         x,
         y,
         yC,
-        epochs=1000,
+        epochs="auto",
         batch_size=2048,
         verbose=2,
         **kwargs,
     ):
+        if epochs == "auto":
+            epochs = self.autoepoch(x, y, yC, verbose=0)
+
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
         else:
@@ -132,7 +148,7 @@ class MLP(tf.keras.Model):
         x = np.nan_to_num(x)
         y = np.nan_to_num(y)
         yC = np.nan_to_num(yC)
-        
+
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
         else:
@@ -140,9 +156,87 @@ class MLP(tf.keras.Model):
 
         return self.eval(x, Y, verbose=verbose)
 
-    def fit(self, x=None, y=None, *args, callbacks=None, **kwargs):
+    def autoepoch(self, X, y, yC, n_splits=4, timeout_samples=1e8, verbose=1):
+        kf = KFold(n_splits=n_splits, shuffle=True)
+        stopped_after_epochs = []
+        timeout_epochs = round(timeout_samples / X.shape[0])
+        epoch_increment = round(timeout_epochs / 10.0)
+
+        def p(*args, **kwargs):
+            if verbose > 0:
+                print(*args, **kwargs)
+
+        self.build(input_shape=X.shape)
+
+        initial_weights = self.get_weights()
+
+        p("Autoepoch cross-validation ...")
+        for s, (train_index, val_index) in enumerate(kf.split(X)):
+            p(f"Split {s}")
+            self.set_weights(initial_weights)
+
+            X_train, X_val = X[train_index], X[val_index]
+            y_train, y_val = y[train_index], y[val_index]
+            yC_train, yC_val = yC[train_index], yC[val_index]
+
+            total_epochs = 0
+            while total_epochs < timeout_epochs:
+                p(f"{total_epochs} / {timeout_epochs}")
+                if self.joint:
+                    y_ = {"objectives": y_train, "constraints": yC_train}
+                    val_ = (
+                        X_val,
+                        {
+                            "objectives": y_val,
+                            "constraints": yC_val,
+                        },
+                    )
+                else:
+                    y_ = yC_train
+                    val_ = (X_val, yC_val)
+                history = self.fit(
+                    X_train,
+                    y_,
+                    validation_data=val_,
+                    epochs=epoch_increment,
+                    batch_size=2048,
+                    callbacks=[
+                        tf.keras.callbacks.EarlyStopping(
+                            monitor=(
+                                "val_constraints_loss" if self.joint else "val_loss"
+                            ),
+                            patience=int(epoch_increment / 2),
+                            restore_best_weights=False,
+                        )
+                    ],
+                    verbose=verbose,
+                    initial_epoch=total_epochs,
+                )
+                if "loss" in history.history:
+                    epochs_this_round = len(history.history["loss"])
+                else:
+                    epochs_this_round = 1
+                total_epochs += epochs_this_round
+
+                if epochs_this_round < epoch_increment:
+                    break
+
+            p(f"Stopped after {total_epochs} for split {s}")
+            stopped_after_epochs.append(total_epochs)
+
+        m = max(stopped_after_epochs)
+
+        self.set_weights(initial_weights)
+
+        p(f"Average epochs: {m} for {stopped_after_epochs}")
+
+        return int(m)
+
+    def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
         # normalize inputs
         self.normalization_layer.adapt(x)
+
+        self._last_fit_epochs = epochs
 
         if self.joint:
             return super().fit(
@@ -152,11 +246,11 @@ class MLP(tf.keras.Model):
                     "constraints": y["constraints"],
                 },
                 *args,
-                callbacks=callbacks,
+                epochs=epochs,
                 **kwargs,
             )
         else:
-            return super().fit(x, y, *args, callbacks=callbacks, **kwargs)
+            return super().fit(x, y, *args, epochs=epochs, **kwargs)
 
     def norm_output(self, yR, inverse=False, adapt=False):
         if adapt:
@@ -187,6 +281,7 @@ class MLP(tf.keras.Model):
             yR = np.nan_to_num(self.norm_output(y_pred["objectives"], inverse=True))
 
             return {
+                "epochs": self._last_fit_epochs,
                 "accuracy": accuracy_score(y_test_prime, y_pred_prime),
                 "precision": precision_score(y_test_prime, y_pred_prime),
                 "recall": recall_score(y_test_prime, y_pred_prime),
@@ -222,6 +317,7 @@ class MLP(tf.keras.Model):
                 return tbl
 
             return {
+                "epochs": self._last_fit_epochs,
                 "accuracy": accuracy_score(y_test_prime, y_pred_prime),
                 "precision": precision_score(y_test_prime, y_pred_prime),
                 "recall": recall_score(y_test_prime, y_pred_prime),
