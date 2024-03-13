@@ -77,6 +77,8 @@ class Dmosopt(Component):
                     Dict[str, Any],
                     str,
                 ],
+                "dynamic_initial_sampling": Optional[str],
+                "dynamic_initial_sampling_kwargs": Optional[Dict],
                 "verbose": bool,
                 "problem_ids": Optional[Set],
                 "problem_parameters": Optional[Dict],
@@ -158,6 +160,7 @@ class Dmosopt(Component):
                 ("reduce_fun_name", {}, None),
                 ("broker_fun_name", {}, None),
                 ("initial_method", config.default_sampling_methods, None),
+                ("dynamic_initial_sampling", {}, "dynamic_initial_sampling_kwargs"),
                 (
                     "surrogate_method_name",
                     config.default_surrogate_methods,
@@ -168,7 +171,7 @@ class Dmosopt(Component):
                     config.default_feasibility_methods,
                     "feasibility_method_kwargs",
                 ),
-                ("surrogate_custom_training", {}, 'surrogate_custom_training_kwargs'),
+                ("surrogate_custom_training", {}, "surrogate_custom_training_kwargs"),
                 ("optimizer_name", config.default_optimizers, None),
                 (
                     "sensitivity_method_name",
@@ -301,7 +304,7 @@ class Dmosopt(Component):
             epochs = h5[f"{opt_id}/{problem_id}/epochs"][:]
 
             # features
-            if 'feature_names' in self.config.dopt_params:
+            if "feature_names" in self.config.dopt_params:
                 feature_enum = h5py.check_enum_dtype(h5[f"{opt_id}/feature_enum"].dtype)
                 feature_enum_T = {v: k for k, v in feature_enum.items()}
                 feature_names = [
@@ -360,7 +363,7 @@ class Dmosopt(Component):
             C = data["constraints"].to_numpy()[region]
         else:
             C = None
-        if data['features'] is not None:
+        if data["features"] is not None:
             f = data["features"][region]
         else:
             f = None

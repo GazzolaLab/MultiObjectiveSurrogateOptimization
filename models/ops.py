@@ -13,7 +13,7 @@ def mlp(
     options,
     scope,
     joint=True,
-    feasibility_solving=0.3,
+    feasibility_solving="f1>0.3",
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
@@ -52,13 +52,13 @@ def mlp(
         )
     )
 
-    model.autofit(x, y, yC)
-    
+    model.autofit(x, y, yC, verbose=0, epochs=model.autoepoch(x, y, yC, verbose=0))
+
     scores = model.autoeval(x, y, yC)
-    
-    if isinstance(feasibility_solving, float):
-        # activate after certain threshold
-        feasibility_solving = scores['f1'] > feasibility_solving
+
+    if isinstance(feasibility_solving, str):
+        # activate on a certain condition
+        feasibility_solving = eval(feasibility_solving, scores)
 
     class Optimizer:
         def __init__(self, optimizer) -> None:
@@ -107,3 +107,65 @@ def mlp(
         model if "feasiblity" in scope else None,
         model if "sensitivity" in scope else None,
     )
+
+
+def dynamic_sampling(
+    iteration,
+    evaluated_samples,
+    next_samples,
+    sampler,
+    max_iterations=10,
+    stop_condition="f1>0.4",
+    feasibility_solving="f1>0.3",
+    feasibility_max_iterations=50,
+    feasibility_use_joint_loss=True,
+    feasibility_max_steps_filter=True,
+):
+    if iteration >= max_iterations:
+        return
+
+    # train model
+
+    x_completed = np.vstack([x.parameters for x in evaluated_samples])
+    y_completed = np.vstack([x.objectives for x in evaluated_samples])
+    c_completed = np.vstack([x.constraints for x in evaluated_samples])
+
+    model = MLP(
+        num_parameters=x_completed.shape[1],
+        num_constraints=c_completed.shape[1],
+        num_objectives=y_completed.shape[1],
+        joint=True,
+    )
+
+    model.autofit(
+        x_completed,
+        y_completed,
+        c_completed,
+        verbose=1,
+        epochs=model.autoepoch(x_completed, y_completed, c_completed, verbose=1),
+    )
+
+    # continue sampling?
+
+    scores = model.autoeval(x_completed, y_completed, c_completed)
+
+    if eval(stop_condition, scores):
+        return
+
+    # generate next samples
+    if isinstance(feasibility_solving, str):
+        feasibility_solving = eval(feasibility_solving, scores)
+
+    if not feasibility_solving:
+        return next_samples
+
+    x_transformed, _ = model.make_feasible(
+        next_samples,
+        learning_rate=0.1,
+        transform=[(l, u) for l, u in zip(sampler["xlb"], sampler["xub"])],
+        max_iterations=feasibility_max_iterations,
+        max_steps_filter=feasibility_max_steps_filter,
+        use_joint_loss=feasibility_use_joint_loss,
+    )
+
+    return x_transformed
