@@ -121,17 +121,9 @@ class MLP(tf.keras.Model):
         self.normalization_layer.adapt(x)
 
         if self.joint:
-            # normalize regression targets
-            yR = y["objectives"]
-            # mean_yR_train = np.mean(yR_train, axis=0)
-            # std_yR_train = np.std(yR_train, axis=0)
-            # yR_standardized = (yR_train - mean_yR_train) / std_yR_train
-            self.min_yR.assign(np.min(yR, axis=0))
-            self.max_yR.assign(np.max(yR, axis=0))
-
             return super().fit(
                 x,
-                {"objectives": self.norm_output(yR), "constraints": y["constraints"]},
+                {"objectives": self.norm_output(y["objectives"], adapt=True), "constraints": y["constraints"]},
                 *args,
                 callbacks=callbacks,
                 **kwargs,
@@ -139,7 +131,15 @@ class MLP(tf.keras.Model):
         else:
             return super().fit(x, y, *args, callbacks=callbacks, **kwargs)
 
-    def norm_output(self, yR, inverse=False):
+    def norm_output(self, yR, inverse=False, adapt=False):
+        if adapt:
+            # mean_yR_train = np.mean(yR_train, axis=0)
+            # std_yR_train = np.std(yR_train, axis=0)
+            # yR_standardized = (yR_train - mean_yR_train) / std_yR_train
+            
+            self.min_yR.assign(np.min(yR, axis=0))
+            self.max_yR.assign(np.max(yR, axis=0))
+        
         if inverse:
             return yR * (self.max_yR - self.min_yR) + self.min_yR
         else:
