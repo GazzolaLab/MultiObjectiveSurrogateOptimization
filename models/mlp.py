@@ -1,6 +1,12 @@
 import tensorflow as tf
 import numpy as np
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    mean_absolute_error,
+)
 
 
 def apply_bounds(tensor, bounds):
@@ -33,6 +39,7 @@ class MLP(tf.keras.Model):
             input_shape=(num_parameters,)
         )
         self.hidden = tf.keras.layers.Dense(100, activation="relu")
+        self.objectives_backbone = tf.keras.layers.Dense(50, activation="relu")
         self.objectives_output = tf.keras.layers.Dense(
             num_objectives, activation="linear", name="objectives"
         )
@@ -81,9 +88,11 @@ class MLP(tf.keras.Model):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
 
+        ox = self.objectives_backbone(x)
+
         if self.joint:
             return {
-                "objectives": self.objectives_output(x),
+                "objectives": self.objectives_output(ox),
                 "constraints": self.constraints_output(x),
             }
         else:
@@ -96,11 +105,9 @@ class MLP(tf.keras.Model):
         yC,
         epochs=1000,
         batch_size=2048,
-        validation_split=0.2,
-        verbose=1,
+        verbose=2,
         **kwargs,
     ):
-        # todo: callbacks
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
         else:
@@ -111,10 +118,23 @@ class MLP(tf.keras.Model):
             Y,
             epochs=epochs,
             batch_size=batch_size,
-            validation_split=validation_split,
             verbose=verbose,
             **kwargs,
         )
+
+    def autoeval(
+        self,
+        x,
+        y,
+        yC,
+        verbose=2,
+    ):
+        if self.joint:
+            Y = {"objectives": y, "constraints": yC}
+        else:
+            Y = yC
+
+        return self.eval(x, Y, verbose=verbose)
 
     def fit(self, x=None, y=None, *args, callbacks=None, **kwargs):
         # normalize inputs
@@ -123,7 +143,10 @@ class MLP(tf.keras.Model):
         if self.joint:
             return super().fit(
                 x,
-                {"objectives": self.norm_output(y["objectives"], adapt=True), "constraints": y["constraints"]},
+                {
+                    "objectives": self.norm_output(y["objectives"], adapt=True),
+                    "constraints": y["constraints"],
+                },
                 *args,
                 callbacks=callbacks,
                 **kwargs,
@@ -136,21 +159,21 @@ class MLP(tf.keras.Model):
             # mean_yR_train = np.mean(yR_train, axis=0)
             # std_yR_train = np.std(yR_train, axis=0)
             # yR_standardized = (yR_train - mean_yR_train) / std_yR_train
-            
+
             self.min_yR.assign(np.min(yR, axis=0))
             self.max_yR.assign(np.max(yR, axis=0))
-        
+
         if inverse:
             return yR * (self.max_yR - self.min_yR) + self.min_yR
         else:
             return (yR - self.min_yR) / (self.max_yR - self.min_yR)
 
-    def eval(self, X_test, y_test, per_feature=False):
+    def eval(self, X_test, y_test, per_feature=False, verbose=1):
         if self.joint:
             assert (
                 not per_feature
             ), "Joint model does not support per_feature evaluation"
-            y_pred = self.predict(X_test)
+            y_pred = self.predict(X_test, verbose=verbose)
 
             y_test_prime = y_test["constraints"].all(axis=1).astype(int)
             y_pred_prime = (
@@ -162,9 +185,13 @@ class MLP(tf.keras.Model):
                 "precision": precision_score(y_test_prime, y_pred_prime),
                 "recall": recall_score(y_test_prime, y_pred_prime),
                 "f1": f1_score(y_test_prime, y_pred_prime),
+                "objective_mae": mean_absolute_error(
+                    y_test["objectives"],
+                    self.norm_output(y_pred["objectives"], inverse=True),
+                ),
             }
         else:
-            y_prob = self.predict(X_test)
+            y_prob = self.predict(X_test, verbose=verbose)
             y_pred = (y_prob > 0.5).astype(int)
 
             y_test_prime = y_test.all(axis=1).astype(int)
@@ -201,6 +228,19 @@ class MLP(tf.keras.Model):
         y_true = tf.cast(tf.cast(tf.reduce_all(y_true, axis=1), tf.int32), tf.float32)
         y_pred = tf.cast(tf.cast(tf.reduce_all(y_pred, axis=1), tf.int32), tf.float32)
         return tf.keras.metrics.binary_accuracy(y_true, y_pred)
+
+    def predict_objectives(self, X, nan_to_num=True, max_zero=True, verbose=0):
+        yR = self.norm_output(
+            self.predict(X, verbose=verbose)["objectives"], inverse=True
+        )
+
+        if nan_to_num:
+            yR = np.nan_to_num(yR)
+
+        if max_zero:
+            yR = np.maximum(np.zeros_like(yR), yR)
+
+        return yR
 
     def make_feasible(
         self,

@@ -13,7 +13,7 @@ def mlp(
     options,
     scope,
     joint=True,
-    feasibility_solving=True,
+    feasibility_solving=0.3,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
@@ -31,9 +31,7 @@ def mlp(
             return None
 
         def evaluate(self, x):
-            y_pred = self.predict(x)
-            yR = self.norm_output(y_pred["objectives"], inverse=True)
-            return np.nan_to_num(yR)
+            return self.predict_objectives(x)
 
         def di_dict(self):
             # TODO: self.sensitivity()
@@ -55,6 +53,12 @@ def mlp(
     )
 
     model.autofit(x, y, yC)
+    
+    scores = model.autoeval(x, y, yC)
+    
+    if isinstance(feasibility_solving, float):
+        # activate after certain threshold
+        feasibility_solving = scores['f1'] > feasibility_solving
 
     class Optimizer:
         def __init__(self, optimizer) -> None:
