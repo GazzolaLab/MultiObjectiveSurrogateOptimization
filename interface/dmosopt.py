@@ -62,7 +62,7 @@ class Dmosopt(Component):
                 "controller_init_fun_name": Optional[str],
                 "controller_init_fun_args": Dict,
                 "reduce_fun_name": Optional[str],
-                "reduce_fun_args": Dict,
+                "reduce_fun_args": Union[List, Tuple],
                 "broker_fun_name": Optional[str],
                 "broker_module_name": Optional[str],
                 # DistOptimizer
@@ -153,9 +153,9 @@ class Dmosopt(Component):
             # validate imports eagerly
             for path, alias, kw in [
                 ("obj_fun_name", {}, None),
-                ("obj_fun_init_name", {}, "controller_init_fun_args"),
+                ("obj_fun_init_name", {}, "obj_fun_init_args"),
                 ("controller_init_fun_name", {}, "controller_init_fun_args"),
-                ("reduce_fun_name", {}, "reduce_fun_args"),
+                ("reduce_fun_name", {}, None),
                 ("broker_fun_name", {}, None),
                 ("initial_method", config.default_sampling_methods, None),
                 (
@@ -301,12 +301,15 @@ class Dmosopt(Component):
             epochs = h5[f"{opt_id}/{problem_id}/epochs"][:]
 
             # features
-            feature_enum = h5py.check_enum_dtype(h5[f"{opt_id}/feature_enum"].dtype)
-            feature_enum_T = {v: k for k, v in feature_enum.items()}
-            feature_names = [
-                feature_enum_T[s[0]] for s in iter(h5[f"{opt_id}/feature_spec"])
-            ]
-            features = h5[f"{opt_id}/{problem_id}/features"][:]
+            if 'feature_names' in self.config.dopt_params:
+                feature_enum = h5py.check_enum_dtype(h5[f"{opt_id}/feature_enum"].dtype)
+                feature_enum_T = {v: k for k, v in feature_enum.items()}
+                feature_names = [
+                    feature_enum_T[s[0]] for s in iter(h5[f"{opt_id}/feature_spec"])
+                ]
+                features = h5[f"{opt_id}/{problem_id}/features"][:]
+            else:
+                features = None
 
             # objectives
             objective_enum = h5py.check_enum_dtype(h5[f"{opt_id}/objective_enum"].dtype)
@@ -357,8 +360,11 @@ class Dmosopt(Component):
             C = data["constraints"].to_numpy()[region]
         else:
             C = None
+        if data['features'] is not None:
+            f = data["features"][region]
+        else:
+            f = None
         objectives = data["objectives"].to_numpy()[region]
-        f = data["features"][region]
         best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
             X, objectives, f, C, None, None
         )
