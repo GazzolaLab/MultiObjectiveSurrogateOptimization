@@ -157,10 +157,13 @@ class MLP(tf.keras.Model):
         return self.eval(x, Y, verbose=verbose)
 
     def autoepoch(self, X, y, yC, n_splits=4, timeout_samples=1e8, verbose=1):
+        if X.shape[0] < n_splits * 2:
+            return 1
+
         kf = KFold(n_splits=n_splits, shuffle=True)
         stopped_after_epochs = []
-        timeout_epochs = round(timeout_samples / X.shape[0])
-        epoch_increment = round(timeout_epochs / 10.0)
+        timeout_epochs = max(25, min(round(timeout_samples / X.shape[0]), 1000))
+        epoch_increment = max(10, round(timeout_epochs / 10.0))
 
         def p(*args, **kwargs):
             if verbose > 0:
@@ -282,14 +285,14 @@ class MLP(tf.keras.Model):
 
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": accuracy_score(y_test_prime, y_pred_prime),
-                "precision": precision_score(y_test_prime, y_pred_prime),
-                "recall": recall_score(y_test_prime, y_pred_prime),
-                "f1": f1_score(y_test_prime, y_pred_prime),
-                "objective_mae": mean_absolute_error(
+                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "f1": float(f1_score(y_test_prime, y_pred_prime)),
+                "objective_mae": float(mean_absolute_error(
                     y_test["objectives"],
                     np.maximum(np.zeros_like(yR), yR),
-                ),
+                )),
             }
         else:
             y_prob = self.predict(X_test, verbose=verbose)
@@ -318,10 +321,10 @@ class MLP(tf.keras.Model):
 
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": accuracy_score(y_test_prime, y_pred_prime),
-                "precision": precision_score(y_test_prime, y_pred_prime),
-                "recall": recall_score(y_test_prime, y_pred_prime),
-                "f1": f1_score(y_test_prime, y_pred_prime),
+                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "f1": float(f1_score(y_test_prime, y_pred_prime)),
             }
 
     def global_accuracy(self, y_true, y_pred):
