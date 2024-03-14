@@ -343,6 +343,11 @@ class Dmosopt(Component):
             metadata = None
             if f"/{opt_id}/metadata" in h5:
                 metadata = h5[f"/{opt_id}/metadata"][:]
+                
+            # timings
+            if f"/{opt_id}/timings" in h5:
+                ts = h5[f"/{opt_id}/timings"]
+                timings = pd.DataFrame(ts[:], columns=ts.dtype.names)
 
         return {
             "constraints": constraints,
@@ -352,6 +357,7 @@ class Dmosopt(Component):
             "parameters": parameters,
             "predictions": predictions,
             "metadata": metadata,
+            "timings": timings,
         }
 
     def get_best(self, region=None, sort_by="-np.std(y, axis=1)"):
