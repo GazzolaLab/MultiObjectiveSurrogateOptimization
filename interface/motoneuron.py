@@ -68,6 +68,18 @@ class Motoneuron(Dmosopt):
                     "pre_spk_count",
                     "initial_v_constr",
                 ],
+                "feature_names": [
+                    "ic_constant_hold",
+                    "ic_constant_rest",
+                    "initial_v_error_hold",
+                    "rn",
+                    "tau",
+                    "fI",
+                    "mean_fI_diff",
+                    "ISI",
+                    "threshold",
+                    "spike_amplitude",
+                ],
                 "feature_dtypes": "benchmarks.mn.feature_dtypes",
                 "optimizer_name": "nsga2",
                 # "optimizer_kwargs": {"sampling_method": "sobol"},
@@ -79,7 +91,7 @@ class Motoneuron(Dmosopt):
                 "num_generations": 400,
                 "termination_conditions": True,
                 "resample_fraction": 1.0,  # times the population_size
-                "surrogate_method_name": None,  # megp , gpr, None,
+                "surrogate_method_name": None,
                 "surrogate_method_kwargs": {},
                 "feasibility_method_name": None,
                 "feasibility_method_kwargs": {},
@@ -139,7 +151,6 @@ class Motoneuron(Dmosopt):
                 "space": space,
                 "feature_dtypes": "benchmarks.mn.feature_dtypes_from_protocol",
                 "initial_maxiter": 10,
-                "surrogate_method_name": "gpr",
                 "metadata": "benchmarks.mn.metadata_from_protocol",
             }
         }

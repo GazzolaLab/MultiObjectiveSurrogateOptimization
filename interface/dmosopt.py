@@ -5,6 +5,7 @@ from dmosopt import dmosopt
 from dmosopt import config
 from machinable.config import to_dict
 from typing import Dict, Optional, List, Callable, Literal, Set, Any, Union, Tuple
+from numbers import Number
 import copy
 from machinable.config import match_method
 import os
@@ -67,6 +68,7 @@ class Dmosopt(Component):
                 "broker_module_name": Optional[str],
                 # DistOptimizer
                 "objective_names": Union[str, List[str]],
+                "feature_names": Union[str, List[str]],
                 "feature_dtypes": str,
                 "constraint_names": Union[str, List[str]],
                 "n_initial": int,
@@ -207,6 +209,13 @@ class Dmosopt(Component):
                                 raise ValueError(
                                     f"Invalid {kw} for {target}. Found `{key}`, but signature is {message[:-2]}"
                                 )
+            # rewrite the default surrogate_method_name to None
+            #  if surrogate_custom_training is specified, we can't
+            #  know from the configuration if the surrogate method
+            #  is used or not. We thus assume by convention that
+            #  it is used iff surrogate_method_name is overriden
+            if "surrogate_method_name" not in payload:
+                payload["surrogate_method_name"] = None
 
             return payload
 
@@ -216,7 +225,13 @@ class Dmosopt(Component):
             params["file_path"] = self.output_filepath
         if "local_random" not in params and "random_seed" not in params:
             params["random_seed"] = self.seed
-        for f in ["feature_dtypes", "objective_names", "constraint_names", "metadata"]:
+        for f in [
+            "feature_dtypes",
+            "feature_names",
+            "objective_names",
+            "constraint_names",
+            "metadata",
+        ]:
             # users may specify these fields in terms of importable objects
             #  to avoid repetition or use custom types
             if f in params and isinstance(params[f], str):
@@ -283,8 +298,8 @@ class Dmosopt(Component):
             opt_id = self.config.dopt_params.opt_id
 
         with h5py.File(filepath, "r") as h5:
-            # constaints
-            if "constraint_names" in self.config.dopt_params:
+            # constraints
+            if f"{opt_id}/constraint_enum" in h5:
                 constraint_enum = h5py.check_enum_dtype(
                     h5[f"{opt_id}/constraint_enum"].dtype
                 )
@@ -304,13 +319,19 @@ class Dmosopt(Component):
             epochs = h5[f"{opt_id}/{problem_id}/epochs"][:]
 
             # features
-            if "feature_names" in self.config.dopt_params:
+            if f"{opt_id}/feature_enum" in h5:
                 feature_enum = h5py.check_enum_dtype(h5[f"{opt_id}/feature_enum"].dtype)
                 feature_enum_T = {v: k for k, v in feature_enum.items()}
                 feature_names = [
                     feature_enum_T[s[0]] for s in iter(h5[f"{opt_id}/feature_spec"])
                 ]
-                features = h5[f"{opt_id}/{problem_id}/features"][:]
+                features = pd.DataFrame(
+                    [
+                        list(feature)
+                        for feature in h5[f"{opt_id}/{problem_id}/features"]
+                    ],
+                    columns=feature_names,
+                )
             else:
                 features = None
 
@@ -343,7 +364,7 @@ class Dmosopt(Component):
             metadata = None
             if f"/{opt_id}/metadata" in h5:
                 metadata = h5[f"/{opt_id}/metadata"][:]
-                
+
             # timings
             if f"/{opt_id}/timings" in h5:
                 ts = h5[f"/{opt_id}/timings"]
@@ -359,6 +380,70 @@ class Dmosopt(Component):
             "metadata": metadata,
             "timings": timings,
         }
+
+    def load_h5_surrogate_evals(
+        self,
+        filepath: Optional[str] = None,
+        opt_id: Optional[str] = None,
+        problem_id: int = 0,
+    ):
+        if filepath is None:
+            filepath = self.output_filepath
+
+        if opt_id is None:
+            opt_id = self.config.dopt_params.opt_id
+
+        with h5py.File(filepath, "r") as h5:
+            epochs = None
+            if f"/{opt_id}/surrogate_evals/epochs" in h5:
+                epochs = h5[f"/{opt_id}/surrogate_evals/epochs"][:]
+
+            generations = None
+            if f"/{opt_id}/surrogate_evals/generations" in h5:
+                generations = h5[f"/{opt_id}/surrogate_evals/generations"][:]
+
+            objectives = None
+            if f"/{opt_id}/surrogate_evals/objectives" in h5:
+                objective_enum = h5py.check_enum_dtype(
+                    h5[f"{opt_id}/objective_enum"].dtype
+                )
+                objective_enum_T = {v: k for k, v in objective_enum.items()}
+                objective_names = [
+                    objective_enum_T[s[0]] for s in iter(h5[f"{opt_id}/objective_spec"])
+                ]
+                objectives = pd.DataFrame(
+                    h5[f"/{opt_id}/surrogate_evals/objectives"][:],
+                    columns=objective_names,
+                )
+
+            parameters = None
+            if f"/{opt_id}/surrogate_evals/parameters" in h5:
+                parameter_enum = h5py.check_enum_dtype(
+                    h5[f"{opt_id}/parameter_enum"].dtype
+                )
+                parameter_enum_T = {v: k for k, v in parameter_enum.items()}
+                parameter_names = [
+                    parameter_enum_T[s[0]] for s in iter(h5[f"{opt_id}/parameter_spec"])
+                ]
+                parameters = pd.DataFrame(
+                    h5[f"/{opt_id}/surrogate_evals/parameters"][:],
+                    columns=parameter_names,
+                )
+
+        return {
+            "epochs": epochs,
+            "generations": generations,
+            "objectives": objectives,
+            "parameters": parameters,
+        }
+
+    def infer_num_initial_samples(self, problem_id: int = 0) -> int:
+        with h5py.File(self.output_filepath, "r") as h5:
+            epochs = h5[f"{self.config.dopt_params.opt_id}/{problem_id}/epochs"][:]
+
+        self.inferred_num_initial_samples = len(epochs[epochs == 0])
+
+        return self.inferred_num_initial_samples
 
     def get_best(self, region=None, sort_by="-np.std(y, axis=1)"):
         if region is None:
@@ -415,3 +500,197 @@ class Dmosopt(Component):
         indicator = indicators.Hypervolume(ref_point)
 
         return indicator.do(pf)
+
+    @property
+    def dc(self):
+        return self.config.dopt_params
+
+    @property
+    def constraint_names(self) -> list[str]:
+        cn = self.config.dopt_params.get("constraint_names", [])
+        if isinstance(cn, str):
+            cn = config.import_object_by_path(cn)
+            if callable(cn):
+                cn = cn(self)
+        return cn
+
+    @property
+    def num_constraints(self) -> int:
+        return len(self.constraint_names)
+
+    @property
+    def objective_names(self) -> list[str]:
+        on = self.config.dopt_params.get("objective_names", [])
+        if isinstance(on, str):
+            on = config.import_object_by_path(on)
+            if callable(on):
+                on = on(self)
+        return on
+
+    @property
+    def num_objectives(self) -> int:
+        return len(self.objective_names)
+
+    @property
+    def feature_names(self) -> list[str]:
+        fn = self.config.dopt_params.get("feature_names", [])
+        if isinstance(fn, str):
+            fn = config.import_object_by_path(fn)
+            if callable(fn):
+                fn = fn(self)
+        return fn
+
+    @property
+    def resample_fraction(self) -> float:
+        return self.config.dopt_params.get("resample_fraction", 0.25)
+
+    @property
+    def population_size(self) -> int:
+        return self.config.dopt_params.get("population_size", 100)
+
+    @property
+    def surrogate_method_name(self) -> str:
+        return self.config.dopt_params.get("surrogate_method_name", "gpr")
+
+    @property
+    def initial_method(self) -> str:
+        return self.config.dopt_params.get("initial_method", "slh")
+
+    @property
+    def num_generations(self) -> int:
+        return self.config.dopt_params.get("num_generations", 200)
+
+    @property
+    def n_epochs(self) -> int:
+        return self.config.dopt_params.get("n_epochs", 10)
+
+    @property
+    def n_initial(self) -> int:
+        return self.config.dopt_params.get("n_initial", 10)
+
+    @property
+    def num_features(self) -> int:
+        return len(self.feature_names)
+
+    @property
+    def num_parameters(self) -> int:
+        return len(self.config.dopt_params.get("space", []))
+
+    @property
+    def num_initial_samples(self) -> int:
+        if self.config.dopt_params.get("dynamic_initial_sampling", None) is not None:
+            n_initial = getattr(self, "inferred_num_initial_samples", None)
+            if n_initial is None:
+                raise RuntimeError(
+                    "Dynamic initial sampling is used, so the number of initial samples is not known. Call infer_num_initial_samples() first."
+                )
+            else:
+                return n_initial
+
+        return self.n_initial * self.num_parameters
+
+    @property
+    def num_resample(self) -> int:
+        return int(self.resample_fraction * self.population_size)
+
+    @property
+    def num_evals_per_epoch(self) -> int:
+        if self.surrogate_method_name is None:
+            return self.num_resample
+
+        return self.population_size * self.num_generations + self.num_resample
+
+    @property
+    def num_evals_total(self) -> int:
+        # n_epochs - 1 since epoch 0 is using the initial sampling, so there are no additional evals
+        return self.num_initial_samples + (self.n_epochs - 1) * self.num_evals_per_epoch
+
+    @property
+    def num_max_surrogate_evals(self) -> int:
+        if (
+            self.surrogate_method_name is None
+            and self.config.dopt_params.get("surrogate_custom_training", None) is None
+        ):
+            return 0
+
+        evals = 0
+        for epoch in range(1, self.n_epochs - 1):
+            # initial sampling
+            evals += self.num_initial_samples
+            evals += self.population_size * epoch
+            # generation
+            evals += self.population_size * (self.num_generations + 1)
+
+        return evals
+
+    def h5_config_consistency(self) -> list[tuple[str, Number, Number]]:
+        inconsistencies = []
+
+        data = self.load_h5()
+
+        # num_features
+        if self.num_features == 0:
+            if data["features"] is not None:
+                inconsistencies.append(
+                    ("num_features", self.num_features, data["features"].shape[1])
+                )
+        elif self.num_features != data["features"].shape[1]:
+            inconsistencies.append(
+                ("num_features", self.num_features, data["features"].shape[1])
+            )
+            if self.feature_names != data["features"].columns.tolist():
+                inconsistencies.append(
+                    (
+                        "feature_names",
+                        self.feature_names,
+                        data["features"].columns.tolist(),
+                    )
+                )
+
+        # num_constraints
+        if self.num_constraints == 0:
+            if data["constraints"] is not None:
+                inconsistencies.append(
+                    (
+                        "num_constraints",
+                        self.num_constraints,
+                        data["constraints"].shape[1],
+                    )
+                )
+        elif self.num_constraints != data["constraints"].shape[1]:
+            inconsistencies.append(
+                ("num_constraints", self.num_constraints, data["constraints"].shape[1])
+            )
+            if self.constraint_names != data["constraints"].columns.tolist():
+                inconsistencies.append(
+                    (
+                        "constraint_names",
+                        self.constraint_names,
+                        data["constraints"].columns.tolist(),
+                    )
+                )
+
+        # num_parameters
+        if self.num_parameters != data["parameters"].shape[1]:
+            inconsistencies.append(
+                ("num_parameters", self.num_parameters, data["parameters"].shape[1])
+            )
+            if (
+                self.config.dopt_params.space.keys()
+                != data["parameters"].columns.tolist()
+            ):
+                inconsistencies.append(
+                    (
+                        "parameter_names",
+                        self.config.dopt_params.space.keys(),
+                        data["parameters"].columns.tolist(),
+                    )
+                )
+
+        # num_evals_total
+        if self.num_evals_total != len(data["epochs"]):
+            inconsistencies.append(
+                ("num_evals_total", self.num_evals_total, len(data["epochs"]))
+            )
+
+        return inconsistencies
