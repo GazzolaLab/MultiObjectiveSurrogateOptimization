@@ -1,7 +1,5 @@
 from models.mlp import MLP
 import numpy as np
-from machinable.utils import save_file
-import os
 
 def mlp(
     optimizer_cls,
@@ -56,13 +54,13 @@ def mlp(
     model.autofit(x, y, yC, verbose=0, epochs=model.autoepoch(x, y, yC, verbose=0))
 
     scores = model.autoeval(x, y, yC)
-    
+
     if isinstance(feasibility_solving, str):
         # activate on a certain condition
         feasibility_solving = bool(eval(feasibility_solving, scores.copy()))
-        
-    scores['feasibility_solving'] = feasibility_solving
-    
+
+    scores["feasibility_solving"] = feasibility_solving
+
     class Optimizer:
         def __init__(self, optimizer) -> None:
             self._wrapped = optimizer
@@ -104,9 +102,8 @@ def mlp(
         def wrapped(cls, *args, **kwargs):
             return cls(optimizer_cls(*args, **kwargs))
 
-    # save metadata
-    save_file([os.path.dirname(file_path), "surrogate_scores.jsonl"], scores, mode="a", makedirs=True)
-    
+    model.stats = {f"model_{k}": v for k, v in scores.items()}
+
     return (
         Optimizer.wrapped,
         model if "objective" in scope else None,
