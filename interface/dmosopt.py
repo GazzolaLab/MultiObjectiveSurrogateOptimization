@@ -18,6 +18,7 @@ from dmosopt import indicators
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import datetime
 
 sys_excepthook = sys.excepthook
 
@@ -623,6 +624,13 @@ class Dmosopt(Component):
             evals += self.population_size * (self.num_generations + 1)
 
         return evals
+
+    def estimate_run_time(self, eval_seconds, surrogate_eval_seconds=None):
+        seconds = self.num_evals_total * eval_seconds
+        if surrogate_eval_seconds is not None:
+            seconds += self.num_max_surrogate_evals * surrogate_eval_seconds
+        return datetime.timedelta(seconds=seconds)
+
 
     def h5_config_consistency(self) -> list[tuple[str, Number, Number]]:
         inconsistencies = []
