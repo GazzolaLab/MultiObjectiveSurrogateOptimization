@@ -365,11 +365,11 @@ class Dmosopt(Component):
             if f"/{opt_id}/metadata" in h5:
                 metadata = h5[f"/{opt_id}/metadata"][:]
 
-            # timings
-            timings = None
-            if f"/{opt_id}/timings" in h5:
-                ts = h5[f"/{opt_id}/timings"]
-                timings = pd.DataFrame(ts[:], columns=ts.dtype.names)
+            # stats
+            stats = None
+            if f"/{opt_id}/stats" in h5:
+                ts = h5[f"/{opt_id}/stats"]
+                stats = pd.DataFrame(ts[:], columns=ts.dtype.names)
 
         return {
             "constraints": constraints,
@@ -379,7 +379,7 @@ class Dmosopt(Component):
             "parameters": parameters,
             "predictions": predictions,
             "metadata": metadata,
-            "timings": timings,
+            "stats": stats,
         }
 
     def load_h5_surrogate_evals(
