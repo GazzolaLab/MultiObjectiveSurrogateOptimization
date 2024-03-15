@@ -366,6 +366,7 @@ class Dmosopt(Component):
                 metadata = h5[f"/{opt_id}/metadata"][:]
 
             # timings
+            timings = None
             if f"/{opt_id}/timings" in h5:
                 ts = h5[f"/{opt_id}/timings"]
                 timings = pd.DataFrame(ts[:], columns=ts.dtype.names)
@@ -595,10 +596,10 @@ class Dmosopt(Component):
 
     @property
     def num_evals_per_epoch(self) -> int:
-        if self.surrogate_method_name is None:
-            return self.num_resample
-
-        return self.population_size * self.num_generations + self.num_resample
+        if self.surrogate_method_name is None and self.config.dopt_params.get("surrogate_custom_training", None) is None:
+            return self.population_size * self.num_generations + self.num_resample
+        
+        return self.num_resample
 
     @property
     def num_evals_total(self) -> int:
