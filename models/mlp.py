@@ -121,6 +121,10 @@ class MLP(tf.keras.Model):
         verbose=2,
         **kwargs,
     ):
+        x = np.nan_to_num(x)
+        y = np.nan_to_num(y)
+        yC = np.nan_to_num(yC)
+
         if epochs == "auto":
             epochs = self.autoepoch(x, y, yC, verbose=0)
 
@@ -156,29 +160,33 @@ class MLP(tf.keras.Model):
 
         return self.eval(x, Y, verbose=verbose)
 
-    def autoepoch(self, X, y, yC, n_splits=4, timeout_samples=1e8, verbose=1):
-        if X.shape[0] < n_splits * 2:
+    def autoepoch(self, x, y, yC, n_splits=4, timeout_samples=1e8, verbose=1):
+        if x.shape[0] < n_splits * 2:
             return 1
+
+        x = np.nan_to_num(x)
+        y = np.nan_to_num(y)
+        yC = np.nan_to_num(yC)
 
         kf = KFold(n_splits=n_splits, shuffle=True)
         stopped_after_epochs = []
-        timeout_epochs = max(25, min(round(timeout_samples / X.shape[0]), 1000))
+        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 1000))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
 
         def p(*args, **kwargs):
             if verbose > 0:
                 print(*args, **kwargs)
 
-        self.build(input_shape=X.shape)
+        self.build(input_shape=x.shape)
 
         initial_weights = self.get_weights()
 
         p("Autoepoch cross-validation ...")
-        for s, (train_index, val_index) in enumerate(kf.split(X)):
+        for s, (train_index, val_index) in enumerate(kf.split(x)):
             p(f"Split {s}")
             self.set_weights(initial_weights)
 
-            X_train, X_val = X[train_index], X[val_index]
+            X_train, X_val = x[train_index], x[val_index]
             y_train, y_val = y[train_index], y[val_index]
             yC_train, yC_val = yC[train_index], yC[val_index]
 
@@ -231,7 +239,7 @@ class MLP(tf.keras.Model):
 
         self.set_weights(initial_weights)
 
-        p(f"Average epochs: {m} for {stopped_after_epochs}")
+        p(f"Max epochs: {m} for {stopped_after_epochs}")
 
         return int(m)
 
@@ -289,10 +297,12 @@ class MLP(tf.keras.Model):
                 "precision": float(precision_score(y_test_prime, y_pred_prime)),
                 "recall": float(recall_score(y_test_prime, y_pred_prime)),
                 "f1": float(f1_score(y_test_prime, y_pred_prime)),
-                "objective_mae": float(mean_absolute_error(
-                    y_test["objectives"],
-                    np.maximum(np.zeros_like(yR), yR),
-                )),
+                "objective_mae": float(
+                    mean_absolute_error(
+                        y_test["objectives"],
+                        np.maximum(np.zeros_like(yR), yR),
+                    )
+                ),
             }
         else:
             y_prob = self.predict(X_test, verbose=verbose)
