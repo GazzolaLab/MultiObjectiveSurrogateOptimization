@@ -269,6 +269,10 @@ class Dmosopt(Component):
     def evaluate_objective_at(self, x):
         import logging
 
+        p = x
+        if not isinstance(p, dict):
+            p = self.parameter_vector_to_dict(x)
+
         logging.basicConfig(level=logging.INFO)
         if "obj_fun_init_name" in self.config.dopt_params:
             obj_fun = config.import_object_by_path(
@@ -277,7 +281,7 @@ class Dmosopt(Component):
         else:
             obj_fun = config.import_object_by_path(self.config.dopt_params.obj_fun_name)
 
-        return obj_fun(self.parameter_vector_to_dict(x))
+        return obj_fun(p)
 
     @property
     def output_filepath(self) -> str:
@@ -576,7 +580,7 @@ class Dmosopt(Component):
 
     @property
     def num_parameters(self) -> int:
-        return len(self.config.dopt_params.get("space", []))
+        return len(self.space)
 
     @property
     def num_initial_samples(self) -> int:
@@ -597,9 +601,12 @@ class Dmosopt(Component):
 
     @property
     def num_evals_per_epoch(self) -> int:
-        if self.surrogate_method_name is None and self.config.dopt_params.get("surrogate_custom_training", None) is None:
+        if (
+            self.surrogate_method_name is None
+            and self.config.dopt_params.get("surrogate_custom_training", None) is None
+        ):
             return self.population_size * self.num_generations + self.num_resample
-        
+
         return self.num_resample
 
     @property
@@ -625,12 +632,23 @@ class Dmosopt(Component):
 
         return evals
 
+    @property
+    def space(self) -> dict[str, Tuple[Number, Number]]:
+        return self.config.dopt_params.get("space", {})
+
+    @property
+    def xub(self) -> list[Number]:
+        return [v[1] for v in self.space.values()]
+
+    @property
+    def xlb(self) -> list[Number]:
+        return [v[0] for v in self.space.values()]
+
     def estimate_run_time(self, eval_seconds, surrogate_eval_seconds=None):
         seconds = self.num_evals_total * eval_seconds
         if surrogate_eval_seconds is not None:
             seconds += self.num_max_surrogate_evals * surrogate_eval_seconds
         return datetime.timedelta(seconds=seconds)
-
 
     def h5_config_consistency(self) -> list[tuple[str, Number, Number]]:
         inconsistencies = []
