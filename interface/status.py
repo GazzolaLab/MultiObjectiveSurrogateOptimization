@@ -19,6 +19,7 @@ class Status(Execution):
 
         table.add_column("Component", style="cyan", no_wrap=True)
         table.add_column("Status", style="blue")
+        table.add_column("Job ID")
         table.add_column("Logs")
 
         def pb(b):
@@ -40,6 +41,11 @@ class Status(Execution):
             table.add_row(
                 pb(executable.cached()) + " " + repr(executable),
                 status,
+                str(
+                    executable.execution.load_file(
+                        [executable.id, "slurm.json"], {}
+                    ).get("job_id", "")
+                ),
                 executable.local_directory()
                 + ", "
                 + executable.execution.output_filepath(),
