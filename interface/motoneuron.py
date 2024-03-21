@@ -7,13 +7,6 @@ from miv_simulator.mechanisms import compile
 import yaml
 import numpy as np
 
-MECHANISMS = compile(
-    "./benchmarks/motoneuron_modeling/mechanisms",
-    os.path.expandvars("$SCRATCH/mechanisms"),
-    recursive=False,
-    return_hash=True,
-)
-
 
 class Motoneuron(Dmosopt):
     class Config(Dmosopt.Config):
@@ -23,7 +16,11 @@ class Motoneuron(Dmosopt):
                 "obj_fun_init_name": "benchmarks.mn.make_obj_fun",
                 "obj_fun_init_args": {
                     "template_name": "MN_nrn",
-                    "mechanisms": MECHANISMS,
+                    "mechanisms": compile(
+                        "./benchmarks/motoneuron_modeling/mechanisms",
+                        os.path.expandvars("$SCRATCH/mechanisms"),
+                        recursive=False,
+                    ),
                 },
                 "problem_parameters": {
                     "soma_f_Caconc": 0.004,
@@ -152,6 +149,57 @@ class Motoneuron(Dmosopt):
                 "feature_dtypes": "benchmarks.mn.feature_dtypes_from_protocol",
                 "initial_maxiter": 10,
                 "metadata": "benchmarks.mn.metadata_from_protocol",
+            }
+        }
+
+    def version_joint_model(
+        self,
+        scope=None,
+        joint=True,
+        feasibility_solving=False,
+        feasibility_max_iterations=50,
+        feasibility_use_joint_loss=True,
+        feasibility_max_steps_filter=True,
+    ):
+        if scope is None:
+            scope = [
+                "objective",
+                "feasiblity",
+            ]
+        return {
+            "dopt_params": {
+                "surrogate_custom_training": "models.ops.mlp",
+                "surrogate_custom_training_kwargs": {
+                    "scope": scope,
+                    "joint": joint,
+                    "feasibility_solving": feasibility_solving,
+                    "feasibility_max_iterations": feasibility_max_iterations,
+                    "feasibility_use_joint_loss": feasibility_use_joint_loss,
+                    "feasibility_max_steps_filter": feasibility_max_steps_filter,
+                },
+            }
+        }
+
+    def version_dynamic_sampling(
+        self,
+        max_iterations=10,
+        stop_condition="f1>0.4",
+        feasibility_solving=False,
+        feasibility_max_iterations=50,
+        feasibility_use_joint_loss=True,
+        feasibility_max_steps_filter=True,
+    ):
+        return {
+            "dopt_params": {
+                "dynamic_initial_sampling": "models.ops.dynamic_sampling",
+                "dynamic_initial_sampling_kwargs": {
+                    "max_iterations": max_iterations,
+                    "stop_condition": stop_condition,
+                    "feasibility_solving": feasibility_solving,
+                    "feasibility_max_iterations": feasibility_max_iterations,
+                    "feasibility_use_joint_loss": feasibility_use_joint_loss,
+                    "feasibility_max_steps_filter": feasibility_max_steps_filter,
+                },
             }
         }
 
@@ -295,3 +343,14 @@ class Motoneuron(Dmosopt):
         ax.tick_params(axis="y", labelsize="x-small")
 
         return fig
+
+    def compute_context(self):
+        context = super().compute_context()
+
+        dc = context["config"]["dopt_params"]
+
+        # ignore mechanisms
+        if "obj_fun_init_args" in dc and "mechanisms" in dc["obj_fun_init_args"]:
+            del dc["obj_fun_init_args"]["mechanisms"]
+
+        return context

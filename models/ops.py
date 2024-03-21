@@ -1,5 +1,7 @@
 from models.mlp import MLP
 import numpy as np
+from machinable.utils import save_file
+import os
 
 def mlp(
     optimizer_cls,
@@ -12,7 +14,7 @@ def mlp(
     options,
     scope,
     joint=True,
-    feasibility_solving="f1>0.3",
+    feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
@@ -113,13 +115,14 @@ def mlp(
 
 
 def dynamic_sampling(
+    file_path,
     iteration,
     evaluated_samples,
     next_samples,
     sampler,
     max_iterations=10,
     stop_condition="f1>0.4",
-    feasibility_solving="f1>0.3",
+    feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
@@ -127,8 +130,12 @@ def dynamic_sampling(
     if iteration >= max_iterations:
         return
 
-    # train model
+    if len(evaluated_samples) == 0:
+        # if resuming run that does not have any samples yet,
+        #  request next_samples to kick things off
+        return next_samples
 
+    # train model
     x_completed = np.vstack([x.parameters for x in evaluated_samples])
     y_completed = np.vstack([x.objectives for x in evaluated_samples])
     c_completed = np.vstack([x.constraints for x in evaluated_samples])
@@ -151,13 +158,17 @@ def dynamic_sampling(
     # continue sampling?
 
     scores = model.autoeval(x_completed, y_completed, c_completed)
+    
+    scores['iteration'] = iteration
 
-    if eval(stop_condition, scores):
+    if eval(stop_condition, scores.copy()):
         return
 
     # generate next samples
     if isinstance(feasibility_solving, str):
-        feasibility_solving = eval(feasibility_solving, scores)
+        feasibility_solving = scores['feasibility_solving'] = bool(eval(feasibility_solving, scores.copy()))
+        
+    save_file([os.path.dirname(file_path), "dynamic_sampling.jsonl"], scores, mode="a")
 
     if not feasibility_solving:
         return next_samples
