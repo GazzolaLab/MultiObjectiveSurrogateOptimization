@@ -240,7 +240,7 @@ class Dmosopt(Component):
                 if callable(fi):
                     fi = fi(self)
                 params[f] = fi
-        dmosopt.run(
+        run = dmosopt.run(
             dopt_params=params,
             time_limit=self.config.time_limit,
             feasible=self.config.feasible,
@@ -256,6 +256,11 @@ class Dmosopt(Component):
             verbose=self.config.verbose,
             worker_debug=self.config.worker_debug,
         )
+
+        try:
+            self.save_file("run.p", run)
+        except:
+            pass
 
     def parameter_vector_to_dict(self, x, include_constants=True):
         constants = {}
