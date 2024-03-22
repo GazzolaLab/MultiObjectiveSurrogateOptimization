@@ -45,7 +45,7 @@ def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanism
     sys.modules['protocol'] = importlib.import_module("benchmarks.motoneuron_modeling.protocol")
     from benchmarks.motoneuron_modeling.dmosopt_MN_nrn import make_obj_fun
     
-    load(os.path.join(os.path.expandvars("$SCRATCH/mechanisms"), mechanisms))
+    load(mechanisms)
 
     if not hasattr(h, template_name):
         load_template(
@@ -276,7 +276,7 @@ def obj_fun(
 ):
     start_time = time.time()
     
-    load(os.path.join(os.path.expandvars("$SCRATCH/mechanisms"), mechanisms))
+    load(mechanisms)
 
     if not hasattr(h, template_name):
         template = load_template(
