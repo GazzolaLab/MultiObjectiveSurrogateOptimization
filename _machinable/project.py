@@ -37,8 +37,11 @@ class MultiObjectiveSurrogateOptimization(Project):
         return super().on_resolve_element(module)
 
     def on_resolve_remotes(self):
+        version = "main"
+        src = f"url+https://raw.githubusercontent.com/machinable-org/machinable/{version}/docs/examples"
         return {
-            "interface.storage.globus": "url+https://raw.githubusercontent.com/machinable-org/machinable/2670e9626eb548f6ce2301923be1f49642086d8c/docs/examples/globus-storage/globus.py",
-            "interface.execution.slurm": "url+https://raw.githubusercontent.com/machinable-org/machinable/2670e9626eb548f6ce2301923be1f49642086d8c/docs/examples/slurm-execution/slurm.py",
-            "interface.execution.local": "url+https://raw.githubusercontent.com/machinable-org/machinable/2670e9626eb548f6ce2301923be1f49642086d8c/docs/examples/mpi-execution/mpi.py",
+            "interface.storage.globus": src + "/globus-storage/globus.py",
+            "interface.execution.slurm": src + "/slurm-execution/slurm.py",
+            "interface.execution.mpi": src + "/mpi-execution/mpi.py",
+            "interface.execution.require": src + "/require-execution/require.py",
         }
