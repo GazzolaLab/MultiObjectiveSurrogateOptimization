@@ -48,10 +48,10 @@ class Dgrate(Dmosopt):
                 "population_size": 400,
                 "num_generations": 400,
                 "resample_fraction": 1.0,
-                "surrogate_method_name": "gpr",
+                "surrogate_method_name": None,
                 "surrogate_method_kwargs": {},
                 "save": True,
-                "save_surrogate_evals": True,
+                "save_surrogate_evals": False,
             }
         )
 
