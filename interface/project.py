@@ -9,9 +9,7 @@ class MultiObjectiveSurrogateOptimization(Project):
             m, c = super().on_resolve_element("interface.execution.slurm")
             return [
                 m,
-                {
-                    "preamble": '\n\n#export UCX_TLS="knem,dc_x"\n\nibrun',
-                },
+                {"mpi": "ibrun"},
             ], c
 
         if module == "interface.storage.globus":
