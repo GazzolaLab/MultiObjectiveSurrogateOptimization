@@ -2,7 +2,6 @@ from interface.dmosopt import Dmosopt
 
 
 class Sopt(Dmosopt):
-
     def version_joint_model(
         self,
         scope=None,

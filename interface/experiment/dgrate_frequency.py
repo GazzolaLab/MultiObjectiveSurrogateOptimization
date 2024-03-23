@@ -3,7 +3,6 @@ from matplotlib import pyplot as plt
 
 
 class DgrateFrequency(Interface):
-
     def launch(self):
         experiment = get(
             "interface.dg_rate",

@@ -17,8 +17,12 @@ experiments = {
 
 # %%
 
+
 def dominates(row, candidate_row):
-    return all(r <= c for r, c in zip(row, candidate_row)) and any(r < c for r, c in zip(row, candidate_row))
+    return all(r <= c for r, c in zip(row, candidate_row)) and any(
+        r < c for r, c in zip(row, candidate_row)
+    )
+
 
 def set_coverage(a, b):
     """
@@ -37,6 +41,7 @@ def set_coverage(a, b):
 def cross_coverage(setA, setB):
     return set_coverage(setA, setB), set_coverage(setB, setA)
 
+
 # %%
 
 if not os.path.isfile("results/performance.p"):
@@ -44,14 +49,14 @@ if not os.path.isfile("results/performance.p"):
     mlp = Component.find_by_id(experiments["mlp"])
     mlp_best = mlp.get_best(region=slice(25000, 50000))
 
-    px, py = [],[]
+    px, py = [], []
     for i in range(0, 400000, 25000):
         print(i)
         px.append(i)
-        baseline_best = baseline.get_best(region=slice(i, i+25000))
+        baseline_best = baseline.get_best(region=slice(i, i + 25000))
         py.append(cross_coverage(mlp_best["y"], baseline_best["y"]))
 
-    with open('results/performance.p', "wb") as f:
+    with open("results/performance.p", "wb") as f:
         pickle.dump(
             {
                 "px": px,
@@ -59,18 +64,18 @@ if not os.path.isfile("results/performance.p"):
             },
             f,
         )
-    
+
     # todo: hv
     # global_ref = []
     # gpf = []
     # for k, v in results.items():
     #     global_ref.append(np.nanmax(v['best_y'], axis=0))
     #     gpf.append(v['best_y'])
-        
+
     # gpf = np.concatenate(gpf, axis=0)
     # global_ref = np.nanmax(global_ref, axis=0)
 else:
-    with open('results/performance.p', "rb") as f:
+    with open("results/performance.p", "rb") as f:
         data = pickle.load(f)
         px = data["px"]
         py = data["py"]
@@ -83,9 +88,7 @@ plt.plot([ppx for ppx in px], [ppy[0] for ppy in py], label="C(grad, baseline)")
 
 plt.xlabel("Number of evaluations")
 plt.ylabel("C(feasibility_grad, baseline)")
-plt.hlines(
-        0.5, 0, 400000, linestyles="dashed", colors="green", label="Feasible"
-)
+plt.hlines(0.5, 0, 400000, linestyles="dashed", colors="green", label="Feasible")
 plt.vlines(
     50000,
     0,

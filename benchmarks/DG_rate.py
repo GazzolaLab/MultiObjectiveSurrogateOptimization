@@ -28,7 +28,6 @@ class DGRate(object):
         PP_weight,  # scale PP synaptic weight (onto GCs and BCs)
         **kwargs,
     ):
-
         self.pars = self.default_parameters
         self.pars["input_freq"] = PP_freq
         self.pars["wPPg"] = PP_weight
@@ -42,7 +41,6 @@ class DGRate(object):
         self.simulate_DG = self.simulate_DG_ivp
 
     def parameters(self, **kwargs):
-
         self.pars.update(kwargs)
 
         # Vector of time points [ms]
@@ -58,8 +56,9 @@ class DGRate(object):
             )  # remove 2, get bifc'n
 
         self.pars["PP"] = periodic_forcing
-        self.pars["PP_interp"] = interpolate.Akima1DInterpolator(self.pars["range_t"],
-                                                                 periodic_forcing)
+        self.pars["PP_interp"] = interpolate.Akima1DInterpolator(
+            self.pars["range_t"], periodic_forcing
+        )
 
         return self.pars
 
@@ -134,7 +133,7 @@ class DGRate(object):
         #    f = 1 / ((1 + np.exp(-gain * (i - thresh))) - (1 + np.exp(gain * thresh)))
 
         f = 1.0 / (1.0 + np.exp(-gain * (i - thresh)))
-            
+
         return f
 
     def simulate_DG_euler(
@@ -254,7 +253,12 @@ class DGRate(object):
 
             # Calculate the derivative of the hipp cell population
             dh = (
-                dt / tau_h * (-h[k] + self.F(wmh * m[k] + wgh * g[k] - whh * h[k], gain_h, thresh_h))
+                dt
+                / tau_h
+                * (
+                    -h[k]
+                    + self.F(wmh * m[k] + wgh * g[k] - whh * h[k], gain_h, thresh_h)
+                )
             )
 
             # Update using Euler's method
@@ -306,17 +310,16 @@ class DGRate(object):
         g, b, m, h = y
         PP_interp = self.pars["PP_interp"]
 
-        #logger.info(f"at time {t}: PP_interp(t): {PP_interp(t)} initial g: {g} b: {b} m: {m} h: {h}")
-        #logger.info(f"at time {t}: F(g): {self.F(wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t), gain_g, thresh_g,)}")
-        #logger.info(f"at time {t}: PP(g): {wPPg * PP_interp(t)}")
-        #logger.info(f"at time {t}: input(g): {wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t)}")
-        #logger.info(f"at time {t}: F(b): {self.F(-wbb * b + wgb * g + wmb * m - whb * h + wPPb * PP_interp(t), gain_b, thresh_b,)}")
-        #logger.info(f"at time {t}: F(m): {self.F(wmm * m + wgm * g - wbm * b - whm * h, gain_m, thresh_m)}")
-        #logger.info(f"at time {t}: F(h): {self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)}")
-        #logger.info(f"at time {t}: exc input m: {wmm * m + wgm * g}")
-        #logger.info(f"at time {t}: inh input m: {wbm * b + whm * h}")
-            
-        
+        # logger.info(f"at time {t}: PP_interp(t): {PP_interp(t)} initial g: {g} b: {b} m: {m} h: {h}")
+        # logger.info(f"at time {t}: F(g): {self.F(wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t), gain_g, thresh_g,)}")
+        # logger.info(f"at time {t}: PP(g): {wPPg * PP_interp(t)}")
+        # logger.info(f"at time {t}: input(g): {wgg * g + wmg * m - wbg * b - whg * h + wPPg * PP_interp(t)}")
+        # logger.info(f"at time {t}: F(b): {self.F(-wbb * b + wgb * g + wmb * m - whb * h + wPPb * PP_interp(t), gain_b, thresh_b,)}")
+        # logger.info(f"at time {t}: F(m): {self.F(wmm * m + wgm * g - wbm * b - whm * h, gain_m, thresh_m)}")
+        # logger.info(f"at time {t}: F(h): {self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)}")
+        # logger.info(f"at time {t}: exc input m: {wmm * m + wgm * g}")
+        # logger.info(f"at time {t}: inh input m: {wbm * b + whm * h}")
+
         dg = (
             -g
             + self.F(
@@ -338,7 +341,7 @@ class DGRate(object):
         ) / tau_m
         dh = (-h + self.F(wmh * m + wgh * g - whh * h, gain_h, thresh_h)) / tau_h
 
-        #logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
+        # logger.info(f"at time {t}: PP: {PP_interp(t)} g: {g} dg: {dg} db: {db} dm: {dm} dh: {dh}")
 
         return [dg, db, dm, dh]
 
@@ -428,12 +431,13 @@ class DGRate(object):
             ),
             method="BDF",
             max_step=0.01,
-            rtol=1e-4, atol=1e-6,
+            rtol=1e-4,
+            atol=1e-6,
             t_eval=t_eval,
         )
 
-        assert(sol.success)
-        
+        assert sol.success
+
         return sol.y
 
     def run(self, **kwargs):
@@ -441,23 +445,31 @@ class DGRate(object):
         g, b, m, h = self.simulate_DG(**params)
         return {"g": g, "b": b, "m": m, "h": h}
 
-    def compute_PSD(self, x, window_size=256, frequency_range=(0, 100.), overlap=0.9):
+    def compute_PSD(self, x, window_size=256, frequency_range=(0, 100.0), overlap=0.9):
+        Fs = 1.0 / self.pars["dt"]
 
-        Fs = 1. / self.pars["dt"]
-        
-        nperseg    = window_size
-        win        = signal.get_window('hann', nperseg)
-        noverlap   = int(overlap * nperseg)
+        nperseg = window_size
+        win = signal.get_window("hann", nperseg)
+        noverlap = int(overlap * nperseg)
 
-        freqs, psd = signal.welch(x, fs=Fs, scaling='density', nperseg=nperseg, noverlap=noverlap,
-                                  window=win, return_onesided=True)
+        freqs, psd = signal.welch(
+            x,
+            fs=Fs,
+            scaling="density",
+            nperseg=nperseg,
+            noverlap=noverlap,
+            window=win,
+            return_onesided=True,
+        )
 
-        freqinds = np.where((freqs >= frequency_range[0]) & (freqs <= frequency_range[1]))
+        freqinds = np.where(
+            (freqs >= frequency_range[0]) & (freqs <= frequency_range[1])
+        )
 
         freqs = freqs[freqinds]
         psd = psd[freqinds]
         if np.all(psd):
-            psd = 10. * np.log10(psd)
+            psd = 10.0 * np.log10(psd)
 
         peak_index = np.where(psd == np.max(psd))[0]
 

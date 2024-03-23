@@ -3,6 +3,7 @@ import numpy as np
 from machinable.utils import save_file
 import os
 
+
 def mlp(
     optimizer_cls,
     Xinit,
@@ -158,16 +159,18 @@ def dynamic_sampling(
     # continue sampling?
 
     scores = model.autoeval(x_completed, y_completed, c_completed)
-    
-    scores['iteration'] = iteration
+
+    scores["iteration"] = iteration
 
     if eval(stop_condition, scores.copy()):
         return
 
     # generate next samples
     if isinstance(feasibility_solving, str):
-        feasibility_solving = scores['feasibility_solving'] = bool(eval(feasibility_solving, scores.copy()))
-        
+        feasibility_solving = scores["feasibility_solving"] = bool(
+            eval(feasibility_solving, scores.copy())
+        )
+
     save_file([os.path.dirname(file_path), "dynamic_sampling.jsonl"], scores, mode="a")
 
     if not feasibility_solving:

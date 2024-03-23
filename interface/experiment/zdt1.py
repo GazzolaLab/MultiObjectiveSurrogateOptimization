@@ -1,6 +1,7 @@
 from machinable import Interface, get
 from matplotlib import pyplot as plt
 
+
 class ZDT1(Interface):
     def launch(self):
         zdt1 = [
@@ -22,21 +23,22 @@ class ZDT1(Interface):
                 }
             },
         ]
-        
+
         if experiment := get(zdt1).future():
-            print('Pareto front:')
-            print(experiment.get_best()['y'])
-            
+            print("Pareto front:")
+            print(experiment.get_best()["y"])
+
         x = [10, 20]
         y = []
         for population_size in x:
-            if experiment := get(zdt1,{"dopt_params.population_size": population_size}).future():
+            if experiment := get(
+                zdt1, {"dopt_params.population_size": population_size}
+            ).future():
                 hv = experiment.hypervolume([11, 11])
                 y.append(hv)
-        
+
         if self.future():
             plt.plot(x, y)
             plt.xlabel("Population")
             plt.ylabel("Hypervolume")
             plt.show()
-        

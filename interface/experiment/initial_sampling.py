@@ -2,7 +2,6 @@ from machinable import Interface, get
 
 
 class InitialSampling(Interface):
-
     def launch(self):
         for max_iterations in [3, 5]:
             get(

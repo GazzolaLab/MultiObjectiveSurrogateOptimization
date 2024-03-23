@@ -8,8 +8,13 @@ import sys
 from mpi4py import MPI
 import time
 import importlib
-sys.modules['neuron_utils'] = importlib.import_module("benchmarks.motoneuron_modeling.neuron_utils")
-sys.modules['ephys_utils'] = importlib.import_module("benchmarks.motoneuron_modeling.ephys_utils")
+
+sys.modules["neuron_utils"] = importlib.import_module(
+    "benchmarks.motoneuron_modeling.neuron_utils"
+)
+sys.modules["ephys_utils"] = importlib.import_module(
+    "benchmarks.motoneuron_modeling.ephys_utils"
+)
 from benchmarks.motoneuron_modeling.protocol import ExperimentalProtocol
 from miv_simulator.mechanisms import load
 from scipy import optimize
@@ -41,17 +46,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanisms, model_variant, target_namespace, worker=None):
-    sys.modules['protocol'] = importlib.import_module("benchmarks.motoneuron_modeling.protocol")
+def protocol_obj_fun_init_adapter(
+    protocol_config_dict,
+    template_name,
+    mechanisms,
+    model_variant,
+    target_namespace,
+    worker=None,
+):
+    sys.modules["protocol"] = importlib.import_module(
+        "benchmarks.motoneuron_modeling.protocol"
+    )
     from benchmarks.motoneuron_modeling.dmosopt_MN_nrn import make_obj_fun
-    
+
     load(mechanisms)
 
     if not hasattr(h, template_name):
-        load_template(
-            template_name, template_file=f"{SOURCE}/{template_name}.hoc"
-        )
-    
+        load_template(template_name, template_file=f"{SOURCE}/{template_name}.hoc")
+
     return make_obj_fun(
         protocol_config_dict=protocol_config_dict,
         feature_dtypes=feature_dtypes_from_protocol_config(
@@ -60,18 +72,26 @@ def protocol_obj_fun_init_adapter(protocol_config_dict, template_name, mechanism
         ),
         template_name=template_name,
         target_namespace=target_namespace,
-        worker=None
+        worker=None,
     )
 
+
 def metadata_from_protocol(optimization):
-    protocol_config_dict = optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict
-    target_namespace = optimization.config.dopt_params.obj_fun_init_args.target_namespace
-    exp_protocol = ExperimentalProtocol(protocol_config_dict,
-                                        target_namespace=target_namespace)
+    protocol_config_dict = (
+        optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict
+    )
+    target_namespace = (
+        optimization.config.dopt_params.obj_fun_init_args.target_namespace
+    )
+    exp_protocol = ExperimentalProtocol(
+        protocol_config_dict, target_namespace=target_namespace
+    )
 
     N_exp = len(protocol_config_dict["Targets"]["f_I"]["I"])
     if target_namespace is not None:
-        N_exp = len(protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"])
+        N_exp = len(
+            protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"]
+        )
 
     N_spk_amp = min(
         len(exp_protocol.exp_i_lb_spk_amp), len(exp_protocol.exp_i_inj_amp_f_I)
@@ -116,7 +136,7 @@ def metadata_from_protocol(optimization):
             (3, N_exp),
         ),
     }
-    
+
     return np.array(
         [tuple((obj_targets[k][0] for k in sorted(obj_targets)))],
         dtype=[
@@ -125,16 +145,20 @@ def metadata_from_protocol(optimization):
         ],
     )
 
+
 def feature_dtypes_from_protocol(optimization):
     return feature_dtypes_from_protocol_config(
-        protocol_config_dict = optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict,
-        target_namespace = optimization.config.dopt_params.obj_fun_init_args.target_namespace,
+        protocol_config_dict=optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict,
+        target_namespace=optimization.config.dopt_params.obj_fun_init_args.target_namespace,
     )
-    
+
+
 def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
     N_exp = len(protocol_config_dict["Targets"]["f_I"]["I"])
     if target_namespace is not None:
-        N_exp = len(protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"])
+        N_exp = len(
+            protocol_config_dict["Target namespaces"][target_namespace]["f_I"]["I"]
+        )
     feature_dtypes = [
         (
             "ic_constant_hold",
@@ -145,9 +169,9 @@ def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
             np.float32,
         ),
         (
-            'initial_v_error_hold',
+            "initial_v_error_hold",
             np.float32,
-        ), 
+        ),
         (
             "rn",
             np.float32,
@@ -163,7 +187,6 @@ def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
         ("spike_amplitude", np.float32, N_exp),
     ]
     return feature_dtypes
-
 
 
 # --- hard-coded default objective / not used when using ~protocol ----------
@@ -275,7 +298,7 @@ def obj_fun(
     worker=None,
 ):
     start_time = time.time()
-    
+
     load(mechanisms)
 
     if not hasattr(h, template_name):
@@ -502,7 +525,7 @@ def obj_fun(
     # Obtain ic_constant for v_rest target
     cell = init_cell(template_name, parameters, v_hold=v_rest)
     ic_constant_rest = cell.soma.ic_constant
-    
+
     evaluation_time = time.time() - start_time
 
     # Pass to dmosopt
@@ -518,7 +541,7 @@ def obj_fun(
             ISI_values,
             thresholds,
             mean_spike_amplitudes,
-            evaluation_time
+            evaluation_time,
         )
     ]
 
