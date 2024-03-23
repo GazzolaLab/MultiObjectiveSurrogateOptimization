@@ -375,12 +375,6 @@ class Dmosopt(Component):
             if f"/{opt_id}/metadata" in h5:
                 metadata = h5[f"/{opt_id}/metadata"][:]
 
-            # stats
-            stats = None
-            if f"/{opt_id}/stats" in h5:
-                ts = h5[f"/{opt_id}/stats"]
-                stats = pd.DataFrame(ts[:], columns=ts.dtype.names)
-
         return {
             "constraints": constraints,
             "epochs": epochs,
@@ -389,7 +383,55 @@ class Dmosopt(Component):
             "parameters": parameters,
             "predictions": predictions,
             "metadata": metadata,
+        }
+        
+    def load_h5_optimizer_data(self, filepath: Optional[str] = None, opt_id: Optional[str] = None):
+        if filepath is None:
+            filepath = self.output_filepath
+
+        if opt_id is None:
+            opt_id = self.config.dopt_params.opt_id
+            
+        with h5py.File(filepath, "r") as h5:
+            stats = None
+            if f"/{opt_id}/optimizer_stats" in h5:
+                epoch = 0
+                stats = []
+                while True:
+                    if f"/{opt_id}/optimizer_stats/{epoch}" not in h5:
+                        break
+                    
+                    epoch_stats = h5[f"/{opt_id}/optimizer_stats/{epoch}/stats"]
+                    stats.append(epoch_stats[:])
+                    
+                    epoch += 1
+            
+                stats = pd.DataFrame(np.concatenate(stats), columns=epoch_stats.dtype.names)
+                    
+
+            params = None
+            if f"/{opt_id}/optimizer_params" in h5:
+                epoch = 1
+                params = []
+                while True:
+                    if f"/{opt_id}/optimizer_params/{epoch}" not in h5:
+                        break
+                    
+                    epoch_params = h5[f"/{opt_id}/optimizer_params/{epoch}"]
+                    row = {
+                        'epoch': epoch
+                    }
+                    for dset in epoch_params:
+                        row[dset] = epoch_params[dset][()]
+                    params.append(row)
+                    
+                    epoch += 1
+                
+                params = pd.DataFrame(params)
+
+        return {
             "stats": stats,
+            "params": params
         }
 
     def load_h5_surrogate_evals(
