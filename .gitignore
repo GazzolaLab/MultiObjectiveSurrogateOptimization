@@ -1,4 +1,4 @@
-_machinable/remotes
+interface/remotes
 compiled/
 storage/
 *.sqlite
