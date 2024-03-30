@@ -83,20 +83,57 @@ else:
 # %%
 
 import matplotlib.pyplot as plt
+import matplotlib
 
-plt.plot([ppx for ppx in px], [ppy[0] for ppy in py], label="C(grad, baseline)")
+matplotlib.use("pgf")
+matplotlib.rcParams.update(
+    {
+        # Adjust to your LaTex-Engine
+        "pgf.texsystem": "pdflatex",
+        "font.family": "serif",
+        "text.usetex": True,
+        "pgf.rcfonts": False,
+        "axes.unicode_minus": False,
+    }
+)
 
-plt.xlabel("Number of evaluations")
-plt.ylabel("C(feasibility_grad, baseline)")
-plt.hlines(0.5, 0, 400000, linestyles="dashed", colors="green", label="Feasible")
+fig = plt.figure(figsize=(6, 4))
+plt.plot([ppx for ppx in px], [ppy[0] for ppy in py], label="C(ours after 50k evaluations, baseline)")
+
+plt.xlabel("Number of evaluations of the baseline")
+plt.ylabel("C(ours-50k, baseline)")
+plt.hlines(0.5, 0, 400000, linestyles="dashed", colors="green", label="C=0.5 (considered comparable)")
 plt.vlines(
     50000,
     0,
     1,
     linestyles="dashed",
     colors="orange",
-    label="feasibility_grad optimization steps",
+    label="Comparison point (50k evaluations of ours)",
 )
+plt.arrow(
+    50000,
+    0.53,
+    130000,
+    0.0,
+    head_width=0.1,
+    head_length=0.05,
+    fc="r",
+    ec="r",
+    label="Saved evaluations (3.6x)",
+)
+# plt.vlines(
+#     350000,
+#     0,
+#     1,
+#     linestyles="dashed",
+#     colors="red",
+#     label="50k evaluations (ours)",
+# )
+plt.xlim(0, 355000)
 plt.legend()
-plt.show()
+
+
+fig.savefig("results/performance.pdf", bbox_inches="tight")
+#plt.show()
 # %%
