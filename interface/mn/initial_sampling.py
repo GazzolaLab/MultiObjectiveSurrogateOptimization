@@ -5,7 +5,7 @@ class InitialSampling(Interface):
     def launch(self):
         for max_iterations in [3, 5]:
             get(
-                "interface.motoneuron",
+                "interface.sopt_motoneuron",
                 [
                     "~from_protocol",
                     "~joint_model",
@@ -22,4 +22,4 @@ class InitialSampling(Interface):
                         },
                     },
                 ],
-            ).launch()
+            ).future()

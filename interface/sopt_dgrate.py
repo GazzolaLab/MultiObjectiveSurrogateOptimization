@@ -10,7 +10,7 @@ class Dgrate(Dmosopt):
         dopt_params: Dict = Field(
             default_factory=lambda: {
                 "opt_id": "default",
-                "obj_fun_name": "benchmarks.DG_rate.obj_fun",
+                "obj_fun_name": "benchmarks.dgr.obj_fun",
                 "problem_parameters": {
                     "fbi": 1.65,
                     "PP_weight": 1.0,
@@ -30,9 +30,9 @@ class Dgrate(Dmosopt):
                     "wmh": (1.0, 2.0),  # MC to HC
                     "wgh": (1.0, 2.0),  # GC to HC
                 },
-                "objective_names": "benchmarks.DG_rate.objective_names",
-                # "constraint_names": "benchmarks.DG_rate.constraint_names",
-                "feature_dtypes": "benchmarks.DG_rate.feature_dtypes",
+                "objective_names": "benchmarks.dgr.objective_names",
+                # "constraint_names": "benchmarks.dgr.constraint_names",
+                "feature_dtypes": "benchmarks.dgr.feature_dtypes",
                 "optimizer_name": "nsga2",
                 "optimizer_kwargs": [
                     {
@@ -56,7 +56,7 @@ class Dgrate(Dmosopt):
         )
 
     def get_model(self, x=None, PP_freq="theta", **params):
-        from benchmarks.DG_rate import DGRate
+        from benchmarks.dgr import DGRate
 
         pp = {}
         if x is None:
