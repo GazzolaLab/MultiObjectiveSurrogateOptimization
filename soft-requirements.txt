@@ -5,3 +5,5 @@ pandas
 numpy
 scikit-learn
 livelossplot
+pysqlite3-binary
+rich
