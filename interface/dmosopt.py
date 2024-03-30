@@ -199,6 +199,10 @@ class Dmosopt(Component):
                     if (d := payload.get(kw, None)) is not None:
                         # verify arguments
                         sig = inspect.signature(obj)
+                        if any([True for p in sig.parameters.values() if p.kind == p.VAR_KEYWORD]):
+                            # if function accepts keyword arguments, we cannot validate :-(
+                            continue
+                        
                         for key in d.keys():
                             if key not in sig.parameters:
                                 message = ""
