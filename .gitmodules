@@ -4,3 +4,6 @@
 [submodule "benchmarks/motoneuron_culture"]
 	path = benchmarks/motoneuron_culture
 	url = https://github.com/GazzolaLab/Motoneuron-Culture.git
+[submodule "benchmarks/hippocampal_dissociated_culture"]
+	path = benchmarks/hippocampal_dissociated_culture
+	url = https://github.com/GazzolaLab/Hippocampal-Dissociated-Culture.git
