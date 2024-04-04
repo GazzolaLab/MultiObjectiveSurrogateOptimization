@@ -199,10 +199,16 @@ class Dmosopt(Component):
                     if (d := payload.get(kw, None)) is not None:
                         # verify arguments
                         sig = inspect.signature(obj)
-                        if any([True for p in sig.parameters.values() if p.kind == p.VAR_KEYWORD]):
+                        if any(
+                            [
+                                True
+                                for p in sig.parameters.values()
+                                if p.kind == p.VAR_KEYWORD
+                            ]
+                        ):
                             # if function accepts keyword arguments, we cannot validate :-(
                             continue
-                        
+
                         for key in d.keys():
                             if key not in sig.parameters:
                                 message = ""
@@ -326,6 +332,10 @@ class Dmosopt(Component):
                     h5[f"{opt_id}/{problem_id}/constraints"][:],
                     columns=constraint_names,
                 )
+                if self.constraint_names:
+                    constraints = constraints[
+                        self.constraint_names
+                    ]  # sort for consistency
             else:
                 constraints = None
 
@@ -346,6 +356,8 @@ class Dmosopt(Component):
                     ],
                     columns=feature_names,
                 )
+                if self.feature_names:
+                    features = features[self.feature_names]  # sort for consistency
             else:
                 features = None
 
@@ -358,6 +370,8 @@ class Dmosopt(Component):
             objectives = pd.DataFrame(
                 h5[f"{opt_id}/{problem_id}/objectives"][:], columns=objective_names
             )
+            if self.objective_names:
+                objectives = objectives[self.objective_names]  # sort for consistency
 
             # parameters
             parameter_enum = h5py.check_enum_dtype(h5[f"{opt_id}/parameter_enum"].dtype)
@@ -368,11 +382,15 @@ class Dmosopt(Component):
             parameters = pd.DataFrame(
                 h5[f"{opt_id}/{problem_id}/parameters"][:], columns=parameter_names
             )
+            # order such that it stays consistent with the space definition
+            parameters = parameters[list(self.config.dopt_params.space.keys())]
 
             # predictions
             predictions = pd.DataFrame(
                 h5[f"{opt_id}/{problem_id}/predictions"][:], columns=objective_names
             )
+            if self.objective_names:
+                predictions = predictions[self.objective_names]  # sort for consistency
 
             # metadata
             metadata = None
