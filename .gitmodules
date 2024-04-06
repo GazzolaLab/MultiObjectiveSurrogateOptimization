@@ -7,3 +7,6 @@
 [submodule "benchmarks/hippocampal_dissociated_culture"]
 	path = benchmarks/hippocampal_dissociated_culture
 	url = https://github.com/GazzolaLab/Hippocampal-Dissociated-Culture.git
+[submodule "benchmarks/ca1_pinsky_rinzel_modeling"]
+	path = benchmarks/ca1_pinsky_rinzel_modeling
+	url = https://github.com/soltesz-lab/CA1PinskyRinzel.git
