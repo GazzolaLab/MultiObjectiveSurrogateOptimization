@@ -5,7 +5,7 @@ from typing import Dict
 from pydantic import Field
 
 
-class Dgrate(Dmosopt):
+class Dgr(Dmosopt):
     class Config(Dmosopt.Config):
         dopt_params: Dict = Field(
             default_factory=lambda: {

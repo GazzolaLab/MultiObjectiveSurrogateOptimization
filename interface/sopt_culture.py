@@ -7,7 +7,7 @@ import datetime
 import os
 
 
-class Network(Sopt):
+class Culture(Sopt):
     class Config(Sopt.Config):
         dopt_params: Dict = Field(
             default_factory=lambda: {

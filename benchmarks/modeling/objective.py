@@ -1,31 +1,16 @@
-import os
-from neuron import h
-import numpy as np
-from functools import partial
 import logging
-from typing import Literal
+import os
 import sys
-from mpi4py import MPI
-import time
-import importlib
+from functools import partial
 
-sys.modules["neuron_utils"] = importlib.import_module(
-    "benchmarks.motoneuron_modeling.neuron_utils"
-)
-sys.modules["ephys_utils"] = importlib.import_module(
-    "benchmarks.motoneuron_modeling.ephys_utils"
-)
-from benchmarks.motoneuron_modeling.protocol import ExperimentalProtocol
+import numpy as np
 from miv_simulator.mechanisms import load
+from mpi4py import MPI
+from neuron import h
 from scipy import optimize
-import benchmarks.motoneuron_modeling.ephys_utils as ephys
-from benchmarks.motoneuron_modeling.neuron_utils import (
-    ic_constant_f,
-    run_iclamp,
-    run_iclamp_steps,
-    run_vclamp,
-    load_template,
-)
+
+from benchmarks.modeling import ephys, utils
+from benchmarks.modeling.protocol import ExperimentalProtocol
 
 sys_excepthook = sys.excepthook
 
@@ -40,29 +25,25 @@ def mpi_excepthook(type, value, traceback):
 
 sys.excepthook = mpi_excepthook
 
-SOURCE = os.path.dirname(ephys.__file__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def protocol_obj_fun_init_adapter(
+def obj_fun_init_from_protocol(
     protocol_config_dict,
     template_name,
+    template_path,
     mechanisms,
-    model_variant,
     target_namespace,
     worker=None,
 ):
-    sys.modules["protocol"] = importlib.import_module(
-        "benchmarks.motoneuron_modeling.protocol"
-    )
-    from benchmarks.motoneuron_modeling.dmosopt_MN_nrn import make_obj_fun
-
     load(mechanisms)
 
     if not hasattr(h, template_name):
-        load_template(template_name, template_file=f"{SOURCE}/{template_name}.hoc")
+        utils.load_template(
+            template_name, template_file=f"{template_path}/{template_name}.hoc"
+        )
 
     return make_obj_fun(
         protocol_config_dict=protocol_config_dict,
@@ -146,13 +127,6 @@ def metadata_from_protocol(optimization):
     )
 
 
-def feature_dtypes_from_protocol(optimization):
-    return feature_dtypes_from_protocol_config(
-        protocol_config_dict=optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict,
-        target_namespace=optimization.config.dopt_params.obj_fun_init_args.target_namespace,
-    )
-
-
 def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
     N_exp = len(protocol_config_dict["Targets"]["f_I"]["I"])
     if target_namespace is not None:
@@ -189,51 +163,25 @@ def feature_dtypes_from_protocol_config(protocol_config_dict, target_namespace):
     return feature_dtypes
 
 
-# --- hard-coded default objective / not used when using ~protocol ----------
+def feature_dtypes_from_protocol(optimization):
+    return feature_dtypes_from_protocol_config(
+        protocol_config_dict=optimization.config.dopt_params.obj_fun_init_args.protocol_config_dict,
+        target_namespace=optimization.config.dopt_params.obj_fun_init_args.target_namespace,
+    )
 
-N_exp = len([20, 30, 40, 50, 60, 70, 80])
 
-feature_dtypes = [
-    (
-        "ic_constant_hold",
-        np.float32,
-    ),
-    (
-        "ic_constant_rest",
-        np.float32,
-    ),
-    (
-        "initial_v_error_hold",
-        np.float32,
-    ),
-    (
-        "rn",
-        np.float32,
-    ),
-    (
-        "tau",
-        np.float32,
-    ),
-    ("fI", np.dtype([("frequency", float)]), N_exp),
-    ("mean_fI_diff", np.float32),
-    (
-        "ISI",
-        np.dtype(
-            [
-                ("first", float),
-                ("last", float),
-                ("ratio", float),
-                ("mean", float),
-                ("std", float),
-                ("N", int),
-            ]
-        ),
-        N_exp,
-    ),
-    ("threshold", np.float32, N_exp),
-    ("spike_amplitude", np.float32, N_exp),
-    ("evaluation_time", np.float32),
-]
+def range_distance(x, lb, ub):
+    # Returns 0. if x is within the range [lb, ub], otherwise returns the smaller of the distance between x and lb, ub
+    return 0.0 if (x >= lb) and (x <= ub) else min(abs(x - lb), abs(x - ub))
+
+
+def lb_distance(x, lb, ub):
+    # Returns 0. if x >= lb, otherwise returns the the distance between x and lb
+    return 0.0 if (x >= lb) else lb - x
+
+
+def reduce_obj_results(xs):
+    return xs[0]
 
 
 def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None):
@@ -247,7 +195,6 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
     template = getattr(h, template_name)
     cell = template(pp)
 
-    # Initialize cell
     h.v_init = v_hold
     h.init()
 
@@ -260,7 +207,7 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
         ic_constant0 = ic_constant_0
         try:
             x0, res = optimize.brentq(
-                ic_constant_f,
+                utils.ic_constant_f,
                 -0.5,
                 0.5,
                 args=(template, pp, ic_constant_0, h.v_init),
@@ -284,107 +231,53 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
     return cell
 
 
-def make_obj_fun(**kwargs):
-    return partial(obj_fun, **kwargs)
-
-
-def obj_fun(
-    parameters,
-    mechanisms: str,
-    template_name: str,
-    v_hold: float = -60,
-    v_rest: float = -57.4,
-    rn_exp_type: Literal["iclamp", "vclamp"] = "iclamp",
-    worker=None,
+def make_obj_fun(
+    protocol_config_dict, feature_dtypes, template_name, target_namespace, worker
 ):
-    start_time = time.time()
+    exp_protocol = ExperimentalProtocol(
+        protocol_config_dict, target_namespace=target_namespace
+    )
 
-    load(mechanisms)
+    return partial(obj_fun, exp_protocol, feature_dtypes, template_name)
 
-    if not hasattr(h, template_name):
-        template = load_template(
-            template_name, template_file=f"{SOURCE}/{template_name}.hoc"
-        )
-    else:
-        template = getattr(h, template_name)
 
-    cell = init_cell(template_name, parameters, v_hold=v_hold)
+# This is the function which is going to be minimized
+def obj_fun(exp_protocol, feature_dtypes, template_name, pp):
+    template = getattr(h, template_name)
+
+    cell = init_cell(template_name, pp, v_hold=exp_protocol.v_hold)
     ic_constant_hold = cell.soma.ic_constant
 
     # Check whether the initial voltage constraint was satisfied
     initial_v_error_hold = float(
-        ic_constant_f(0.0, template, parameters, ic_constant_hold, v_hold=v_hold)
+        utils.ic_constant_f(
+            0.0, template, pp, ic_constant_hold, v_hold=exp_protocol.v_hold
+        )
     )
 
     initial_v_constr = 1 if abs(initial_v_error_hold) < 1.0 else -1
     logger.info(f"ic_constant check: {initial_v_error_hold} constr: {initial_v_constr}")
 
     cell = init_cell(
-        template_name, parameters, v_hold=v_hold, ic_constant_val=ic_constant_hold
+        template_name, pp, v_hold=exp_protocol.v_hold, ic_constant_val=ic_constant_hold
     )
 
     rn, tau = np.nan, np.nan
     iclamp_results = None
     vclamp_results = None
-
     # Measure input resistance and membrane time constant
     if initial_v_constr > 0:
         # Run single current injection to measure subthreshold features
         try:
-            if rn_exp_type == "iclamp":
-                # Rin
-                this_target_amp = -100.0 * 1.0e-3
-                t0 = 250
-                t1 = 1250
-                tstop = 3000.0
-                t, v = run_iclamp(
-                    cell, t0=t0, t1=t1, amp=this_target_amp, tstop=tstop, v_init=v_hold
+            if exp_protocol.rn_exp_type == "iclamp":
+                iclamp_results = exp_protocol.run_iclamp(
+                    cell, target="Rin", tstop=3000.0
                 )
-                iclamp_results = {
-                    "t": t,
-                    "v": v,
-                    "t0": t0,
-                    "t1": t1,
-                    "stim_amp": this_target_amp,
-                }
-            elif rn_exp_type == "vclamp":
-                # Rin
-                this_target_amps = np.asarray(-60.0) * 1.0
-                tstop = 10000.0
-                t0 = tstop / 2.0
-                t1 = t0 + 1000.0
-                t2 = t1 + 1000.0
-                vclamp_results = run_vclamp(
-                    cell,
-                    ts=[t0, t1, t2],
-                    amps=this_target_amps,
-                    t_stop=tstop,
-                    v_init=v_hold,
+            elif exp_protocol.rn_exp_type == "vclamp":
+                vclamp_results = exp_protocol.run_vclamp(cell, target="Rin")
+                iclamp_results = exp_protocol.run_iclamp(
+                    cell, target="tau0", tstop=3000.0
                 )
-                vclamp_results = {
-                    "t0": t0,
-                    "t1": t1,
-                    "t2": t2,
-                    "t": vclamp_results["t"],
-                    "v": vclamp_results["v"],
-                    "i": vclamp_results["i"],
-                }
-
-                # tau0
-                this_target_amp = -0.1
-                t0 = 250
-                t1 = 1250
-                tstop = 3000.0
-                t, v = run_iclamp(
-                    cell, t0=t0, t1=t1, amp=this_target_amp, tstop=tstop, v_init=v_hold
-                )
-                iclamp_results = {
-                    "t": t,
-                    "v": v,
-                    "t0": t0,
-                    "t1": t1,
-                    "stim_amp": this_target_amp,
-                }
         except:
             pass
         else:
@@ -394,41 +287,20 @@ def obj_fun(
             if vclamp_results is not None:
                 rn = ephys.measure_rn_from_vclamp(**vclamp_results)
 
-    target_rn = (540.0, 598.0)
-    target_tau = (16.308, 19.375)
+    target_rn = exp_protocol.target_rn
+    target_tau = exp_protocol.target_tau
     rn_obj_value = range_distance(rn, target_rn[0], target_rn[1]) ** 2
     tau_obj_value = range_distance(tau, target_tau[0], target_tau[1]) ** 2
 
     tau_constr = 1 if ((tau > 0.0) and (tau < 1000.0)) else -1
     rn_constr = 1 if ((rn > 0.0) and (rn < 1000.0)) else -1
 
-    exp_i_inj_t0_f_I = 500
-    exp_i_inj_t1_f_I = 1500
-    exp_i_inj_amp_f_I = np.asarray([20, 30, 40, 50, 60, 70, 80]) * 1.0e-3
-
     # Run iclamp experiments
     iclamp_results = []
     cell = init_cell(
-        template_name, parameters, v_hold=v_hold, ic_constant_val=ic_constant_hold
+        template_name, pp, v_hold=exp_protocol.v_hold, ic_constant_val=ic_constant_hold
     )
-    iclamp_results = run_iclamp_steps(
-        cell,
-        v_init=v_hold,
-        Isteps=np.asarray(
-            [
-                (
-                    amp,
-                    exp_i_inj_t0_f_I,
-                    exp_i_inj_t1_f_I,
-                )
-                for amp in exp_i_inj_amp_f_I
-            ]
-        ),
-        record_dt=0.01,
-        tstop=2000,
-        use_cvode=False,
-        use_coreneuron=True,
-    )
+    iclamp_results = exp_protocol.run_iclamp_steps(cell)
 
     # Measure spike features
     (
@@ -438,15 +310,14 @@ def obj_fun(
         thresholds,
         mean_spike_amplitudes,
     ) = ephys.measure_spike_features(
-        iclamp_results, exp_i_inj_t0_f_I, exp_i_inj_t1_f_I + 2.0
+        iclamp_results,
+        exp_protocol.exp_i_inj_t0_f_I,
+        exp_protocol.exp_i_inj_t1_f_I + 2.0,
     )
 
     pre_spk_count_constr = -1 if np.sum(pre_spk_cnt) > 0 else 1
 
-    ISI_values = ephys.measure_ISI(exp_i_inj_amp_f_I, spk_infos)
-
-    exp_i_lb_spk_adaptation = np.asarray([1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2])
-    exp_i_ub_spk_adaptation = np.asarray([1.6, 1.6, 1.6, 1.6, 1.6, 1.6, 1.6])
+    ISI_values = ephys.measure_ISI(exp_protocol.exp_i_inj_amp_f_I, spk_infos)
 
     ISI_adaptation_dists = list(
         map(
@@ -455,57 +326,53 @@ def obj_fun(
             ),
             ISI_values["ratio"],
             zip(
-                exp_i_lb_spk_adaptation,
-                exp_i_ub_spk_adaptation,
+                exp_protocol.exp_i_lb_spk_adaptation,
+                exp_protocol.exp_i_ub_spk_adaptation,
             ),
         )
     )
     ISI_adaptation_obj_value = np.mean([dist**2 for dist in ISI_adaptation_dists])
     ISI_adaptation_constr = -1 if np.isnan(ISI_adaptation_obj_value) else 1
 
-    exp_first_ISI_lower = np.zeros(len([20, 30, 40, 50, 60, 70, 80]))
-
-    first_ISI_constr = 1 if np.all(ISI_values["first"] > exp_first_ISI_lower) else -1
+    first_ISI_constr = (
+        1 if np.all(ISI_values["first"] > exp_protocol.exp_first_ISI_lower) else -1
+    )
 
     fI_values = ephys.measure_fI(
         spk_cnt,
-        exp_i_inj_t0_f_I,
-        exp_i_inj_t1_f_I,
-        exp_i_inj_amp_f_I,
+        exp_protocol.exp_i_inj_t0_f_I,
+        exp_protocol.exp_i_inj_t1_f_I,
+        exp_protocol.exp_i_inj_amp_f_I,
     )
-
-    exp_i_mean_rate_f_I = [3.88, 9.09, 11.75, 14.29, 15.96, 16.58, 18.25]
 
     fI_mean_target_rate_diff = np.mean(
         [
             (target_rate - rate) ** 2
-            for rate, target_rate in zip(fI_values["frequency"], exp_i_mean_rate_f_I)
+            for rate, target_rate in zip(
+                fI_values["frequency"], exp_protocol.exp_i_mean_rate_f_I
+            )
         ]
     )
 
-    exp_i_lb_rate_f_I = exp_i_mean_rate_f_I
-    exp_i_ub_rate_f_I = exp_i_mean_rate_f_I
     fI_range_dists = list(
         map(
             lambda rate, target_range: range_distance(
                 rate, target_range[0], target_range[1]
             ),
             fI_values["frequency"],
-            zip(exp_i_lb_rate_f_I, exp_i_ub_rate_f_I),
+            zip(exp_protocol.exp_i_lb_rate_f_I, exp_protocol.exp_i_ub_rate_f_I),
         )
     )
     fI_obj_value = np.mean([dist**2 for dist in fI_range_dists])
 
     # Compute objectives
-    exp_i_ub_spk_amp = [80.0, 80.0, 80.0, 80.0, 80.0, 80.0, 80.0]
-    exp_i_lb_spk_amp = [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0]
     mean_spike_amplitude_range_dists = list(
         map(
             lambda amp, target_amp: None
             if np.isnan(target_amp[0])
             else range_distance(amp, target_amp[0], target_amp[1]),
             mean_spike_amplitudes,
-            zip(exp_i_lb_spk_amp, exp_i_ub_spk_amp),
+            zip(exp_protocol.exp_i_lb_spk_amp, exp_protocol.exp_i_ub_spk_amp),
         )
     )
     mean_spike_amplitude_obj_value = np.mean(
@@ -523,10 +390,8 @@ def obj_fun(
     monotonic_fI_constr = 1 if np.all(fI_rate_diff > 0) else -1
 
     # Obtain ic_constant for v_rest target
-    cell = init_cell(template_name, parameters, v_hold=v_rest)
+    cell = init_cell(template_name, pp, v_hold=exp_protocol.v_rest)
     ic_constant_rest = cell.soma.ic_constant
-
-    evaluation_time = time.time() - start_time
 
     # Pass to dmosopt
     feature_list = [
@@ -541,7 +406,6 @@ def obj_fun(
             ISI_values,
             thresholds,
             mean_spike_amplitudes,
-            evaluation_time,
         )
     ]
 
@@ -558,12 +422,10 @@ def obj_fun(
                 ISI_values,
                 thresholds,
                 mean_spike_amplitudes,
-                evaluation_time,
             )
         ],
         dtype=np.dtype(feature_dtypes),
     )
-
     obj_values = np.asarray(
         [
             rn_obj_value,
@@ -589,8 +451,3 @@ def obj_fun(
     )
 
     return obj_values, feature_values, constr_values
-
-
-def range_distance(x, lb, ub):
-    # Returns 0. if x is within the range [lb, ub], otherwise returns the smaller of the distance between x and lb, ub
-    return 0.0 if (x >= lb) and (x <= ub) else min(abs(x - lb), abs(x - ub))

@@ -2,7 +2,7 @@ from machinable import Interface, get
 from matplotlib import pyplot as plt
 
 
-class ZDT1(Interface):
+class ZDT(Interface):
     def launch(self):
         zdt1 = [
             "interface.dmosopt",

@@ -8,45 +8,88 @@ import yaml
 import numpy as np
 
 
-class Motoneuron(Sopt):
+class Modeling(Sopt):
     class Config(Sopt.Config):
         dopt_params: Dict = Field(
             default_factory=lambda: {
                 "opt_id": "default",
-                "obj_fun_init_name": "benchmarks.mn.make_obj_fun",
+                "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes",
+                "optimizer_name": "nsga2",
+                "initial_method": "slh",
+                "n_initial": 800,
+                "initial_maxiter": 10,
+                "n_epochs": 10,
+                "population_size": 400,
+                "num_generations": 400,
+                "termination_conditions": True,
+                "resample_fraction": 1.0,
+                "surrogate_method_name": None,
+                "surrogate_method_kwargs": {},
+                "feasibility_method_name": None,
+                "feasibility_method_kwargs": {},
+                "save": True,
+                "save_surrogate_evals": False,
+            }
+        )
+
+    def version_from_protocol(
+        self,
+        filepath: str = "benchmarks/motoneuron_modeling/config/motoneuron.yaml",
+        model_variant: str = "default",
+        target_namespace: Optional[str] = None,
+        template_path: Optional[str] = None,
+        mechanisms_path: Optional[str] = None,
+    ):
+        source = os.path.dirname(os.path.dirname(filepath))
+        if template_path is None:
+            template_path = source
+        if mechanisms_path is None:
+            mechanisms_path = os.path.join(source, "mechanisms")
+
+        with open(filepath) as f:
+            protocol_config_dict = yaml.load(f, Loader=yaml.FullLoader)
+
+        if "best" in protocol_config_dict:
+            del protocol_config_dict["best"]
+
+        if "p0" in protocol_config_dict:
+            del protocol_config_dict["p0"]
+
+        celltype = protocol_config_dict["Celltype"]
+        template_dict = protocol_config_dict.get("Template", None)
+        template_name = None
+        if template_dict is None:
+            template_name = "MN_nrn"
+        else:
+            if model_variant in template_dict:
+                template_name = template_dict[model_variant]["name"]
+            else:
+                raise ValueError(f"Unknown model variant {model_variant}")
+
+        problem_parameters = protocol_config_dict["Parameters"]
+        variant_parameters_dict = protocol_config_dict.get("Variant Parameters", {})
+        if model_variant in variant_parameters_dict:
+            variant_parameters = variant_parameters_dict[model_variant]
+            for k in variant_parameters:
+                problem_parameters[k] = variant_parameters[k]
+
+        space = protocol_config_dict["Space"]
+        variant_space_dict = protocol_config_dict.get("Variant Space", {})
+        if model_variant in variant_space_dict:
+            variant_space = variant_space_dict[model_variant]
+            for k in variant_space:
+                space[k] = variant_space[k]
+
+        return {
+            "dopt_params": {
+                "opt_id": f"dmosopt_{celltype}_neuron",
+                "obj_fun_init_name": "benchmarks.modeling.objective.obj_fun_init_from_protocol",
                 "obj_fun_init_args": {
-                    "template_name": "MN_nrn",
-                    "mechanisms": compile(
-                        "./benchmarks/motoneuron_modeling/mechanisms",
-                        os.path.expandvars("$SCRATCH/mechanisms"),
-                        recursive=False,
-                    ),
-                },
-                "problem_parameters": {
-                    "soma_f_Caconc": 0.004,
-                    "soma_alpha_Caconc": 1,
-                    "soma_kCa_Caconc": 8,
-                    "dend_f_Caconc": 0.004,
-                    "dend_alpha_Caconc": 1,
-                    "dend_kCa_Caconc": 8,
-                    "global_diam": 5,
-                    "global_cm": 2,
-                    "e_pas": -62,
-                    "pp": 0.1,
-                    "Ltotal": 120,
-                },
-                "space": {
-                    "gc": [0.1, 2],
-                    "soma_gmax_Na": [0.1, 0.3],
-                    "soma_gmax_K": [0.01, 0.3],
-                    "soma_gmax_KCa": [0.0001, 0.01],
-                    "soma_gmax_CaN": [0.00001, 0.03],
-                    "soma_g_pas": [0.00001, 0.01],
-                    "dend_gmax_CaL": [0.00001, 0.001],
-                    "dend_gmax_CaN": [0.00001, 0.001],
-                    "dend_gmax_KCa": [0.0001, 0.005],
-                    "dend_g_pas": [0.00001, 0.01],
-                    "cm_ratio": [1, 40],
+                    "protocol_config_dict": protocol_config_dict,
+                    "template_name": template_name,
+                    "template_path": template_path,
+                    "mechanisms": compile(mechanisms_path, recursive=False),
+                    "target_namespace": target_namespace,
                 },
                 "objective_names": [
                     "rn_error",
@@ -77,78 +120,10 @@ class Motoneuron(Sopt):
                     "threshold",
                     "spike_amplitude",
                 ],
-                "feature_dtypes": "benchmarks.mn.feature_dtypes",
-                "optimizer_name": "nsga2",
-                # "optimizer_kwargs": {"sampling_method": "sobol"},
-                "initial_method": "slh",
-                "n_initial": 800,  # times number of parameters
-                "initial_maxiter": 0,
-                "n_epochs": 10,
-                "population_size": 400,
-                "num_generations": 400,
-                "termination_conditions": True,
-                "resample_fraction": 1.0,  # times the population_size
-                "surrogate_method_name": None,
-                "surrogate_method_kwargs": {},
-                "feasibility_method_name": None,
-                "feasibility_method_kwargs": {},
-                "save": True,
-                "save_surrogate_evals": True,
-            }
-        )
-
-    def version_from_protocol(
-        self,
-        filepath: str = "benchmarks/motoneuron_modeling/config/motoneuron.yaml",
-        model_variant: str = "default",
-        target_namespace: Optional[str] = None,
-    ):
-        with open(filepath) as f:
-            protocol_config_dict = yaml.load(f, Loader=yaml.FullLoader)
-
-        if "best" in protocol_config_dict:
-            del protocol_config_dict["best"]
-
-        celltype = protocol_config_dict["Celltype"]
-        template_dict = protocol_config_dict.get("Template", None)
-        template_name = None
-        if template_dict is None:
-            template_name = "MN_nrn"
-        else:
-            if model_variant in template_dict:
-                template_name = template_dict[model_variant]["name"]
-            else:
-                raise ValueError(f"Unknown model variant {model_variant}")
-
-        problem_parameters = protocol_config_dict["Parameters"]
-        variant_parameters_dict = protocol_config_dict.get("Variant Parameters", {})
-        if model_variant in variant_parameters_dict:
-            variant_parameters = variant_parameters_dict[model_variant]
-            for k in variant_parameters:
-                problem_parameters[k] = variant_parameters[k]
-
-        space = protocol_config_dict["Space"]
-        variant_space_dict = protocol_config_dict.get("Variant Space", {})
-        if model_variant in variant_space_dict:
-            variant_space = variant_space_dict[model_variant]
-            for k in variant_space:
-                space[k] = variant_space[k]
-
-        return {
-            "dopt_params": {
-                "opt_id": f"dmosopt_{celltype}_neuron",
-                "obj_fun_init_name": "benchmarks.mn.protocol_obj_fun_init_adapter",
-                "obj_fun_init_args": {
-                    "protocol_config_dict": protocol_config_dict,
-                    "model_variant": model_variant,
-                    "target_namespace": target_namespace,
-                    "template_name": template_name,
-                },
                 "problem_parameters": problem_parameters,
                 "space": space,
-                "feature_dtypes": "benchmarks.mn.feature_dtypes_from_protocol",
-                "initial_maxiter": 10,
-                "metadata": "benchmarks.mn.metadata_from_protocol",
+                "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes_from_protocol",
+                "metadata": "benchmarks.modeling.objective.metadata_from_protocol",
             }
         }
 
@@ -298,8 +273,14 @@ class Motoneuron(Sopt):
 
         dc = context["config"]["dopt_params"]
 
-        # ignore mechanisms
-        if "obj_fun_init_args" in dc and "mechanisms" in dc["obj_fun_init_args"]:
+        try:
             del dc["obj_fun_init_args"]["mechanisms"]
+        except:
+            pass
+
+        try:
+            del dc["obj_fun_init_args"]["template_path"]
+        except:
+            pass
 
         return context
