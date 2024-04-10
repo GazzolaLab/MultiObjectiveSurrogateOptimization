@@ -528,7 +528,7 @@ class Dmosopt(Component):
         else:
             C = None
         if data["features"] is not None:
-            f = data["features"][region]
+            f = data["features"].to_numpy()[region]
         else:
             f = None
         objectives = data["objectives"].to_numpy()[region]
@@ -562,17 +562,17 @@ class Dmosopt(Component):
         if pf is None:
             pf = self.get_best()["y"]
 
-        indicator = indicators.IGD(pf)
+        indicator = indicators.IGD(np.array(pf))
 
-        return indicator.do(ref_front)
+        return indicator.do(np.array(ref_front))
 
     def hypervolume(self, ref_point, pf=None):
         if pf is None:
             pf = self.get_best()["y"]
 
-        indicator = indicators.Hypervolume(ref_point)
+        indicator = indicators.Hypervolume(np.array(ref_point))
 
-        return indicator.do(pf)
+        return indicator.do(np.array(pf))
 
     @property
     def dc(self):
