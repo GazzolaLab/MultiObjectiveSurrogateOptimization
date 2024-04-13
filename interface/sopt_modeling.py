@@ -31,6 +31,7 @@ class Modeling(Sopt):
                 "save_surrogate_evals": False,
             }
         )
+        nodes: str = "20"
 
     def version_from_protocol(
         self,
@@ -280,6 +281,16 @@ class Modeling(Sopt):
 
         try:
             del dc["obj_fun_init_args"]["template_path"]
+        except:
+            pass
+
+        try:
+            del dc["obj_fun_init_args"]["protocol_config_dict"]
+        except:
+            pass
+
+        try:
+            del context["config"]["nodes"]
         except:
             pass
 
