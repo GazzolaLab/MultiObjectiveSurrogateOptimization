@@ -1,9 +1,0 @@
-tensorflow==2.15
-matplotlib
-seaborn
-pandas
-numpy
-scikit-learn
-livelossplot
-pysqlite3-binary
-rich

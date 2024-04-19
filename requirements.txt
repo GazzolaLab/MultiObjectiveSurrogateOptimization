@@ -1,0 +1,12 @@
+miv_simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@main
+dmosopt @ https://github.com/iraikov/dmosopt@main
+machinable
+tensorflow==2.15
+matplotlib
+seaborn
+pandas
+numpy
+scikit-learn
+livelossplot
+pysqlite3-binary
+rich
