@@ -64,3 +64,60 @@ ma <index/storage module> <execution module> <interface> --launch
 ```sh
 .sopt_modeling "~from_protocol('benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_SCA.yaml')" dopt_params.n_initial=200
 ```
+
+### Surrogates
+
+#### Joint model
+
+```python
+"dopt_params": {
+    "surrogate_custom_training": "models.ops.mlp",
+    "surrogate_custom_training_kwargs": {
+        "scope": ['objective', 'feasibility', 'sensitivity'],
+        # Things to predict with this model
+        #  Note that if a scope is disabled, it will fall back on the usual
+        #  dmosopt options. For example, if you specify `"surrogate_method_name": 'gpr'`
+        #  and scope `['feasibility']`, the MLP model will be used for the constraints
+        #  but to predict the objective the usual `gpr` surrogate will be used.
+        "joint": True,
+        # Whether to model objective and constraints jointly. If False, the model will
+        #  only learn and predict the constraints
+        "feasibility_solving": False,
+        # If True, the gradient information of the model will be used to push samples
+        #  towards feasibility. This can be activated conditionally using a string,
+        #  e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+        "feasibility_max_iterations": 50,
+        # Only applies if feasibility_solving is True; number of iterations
+        "feasibility_use_joint_loss": True,
+        # Only applies if feasibility_solving is True; whether to use joint loss
+        "feasibility_max_steps_filter": True,
+        # Only applies if feasibility_solving is True; optional early stopping
+    },
+}
+```
+
+#### Dynamic sampling
+
+```python
+"dopt_params": {
+    "dynamic_initial_sampling": "models.ops.dynamic_sampling",
+    "dynamic_initial_sampling_kwargs": {
+        "max_iterations": 10,
+        # Number of maximum iterations
+        "stop_condition": "f1>0.4",
+        # Condition at which sampling stops early
+        "feasibility_solving": False,
+        # If True, the gradient information of the model will be used to push samples
+        #  towards feasibility. This can be activated conditionally using a string,
+        #  e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+        "feasibility_max_iterations": 50,
+        # Only applies if feasibility_solving is True; number of iterations
+        "feasibility_use_joint_loss": True,
+        # Only applies if feasibility_solving is True; whether to use joint loss
+        "feasibility_max_steps_filter": True,
+        # Only applies if feasibility_solving is True; optional early stopping
+    },
+}
+```
+
+
