@@ -52,6 +52,8 @@ class Dmosopt(Component):
         collective_mode: Literal["gather", "sendrecv"] = "gather"
         verbose: bool = True
         worker_debug: bool = False
+        nodes: str = "20"
+        ranks: Optional[int] = None
 
         @field_validator("dopt_params", mode="before")
         @classmethod
@@ -69,7 +71,6 @@ class Dmosopt(Component):
                 "broker_module_name": Optional[str],
                 # DistOptimizer
                 "objective_names": Union[str, List[str]],
-                "feature_names": Union[str, List[str]],
                 "feature_dtypes": str,
                 "constraint_names": Union[str, List[str]],
                 "n_initial": int,
@@ -134,6 +135,8 @@ class Dmosopt(Component):
 
             payload = copy.deepcopy(to_dict(params))
             for k, v in payload.items():
+                if k == 'feature_names':
+                    raise ValueError("Use feature_dtypes instead of feature_names")
                 if k not in _t:
                     raise ValueError(f"Invalid option: {k}")
                 if isinstance(v, str) and match_method(v):
@@ -238,7 +241,6 @@ class Dmosopt(Component):
             params["random_seed"] = self.seed
         for f in [
             "feature_dtypes",
-            "feature_names",
             "objective_names",
             "constraint_names",
             "metadata",
@@ -606,7 +608,11 @@ class Dmosopt(Component):
 
     @property
     def feature_names(self) -> list[str]:
-        fn = self.config.dopt_params.get("feature_names", [])
+        return [f[0] for f in self.feature_dtypes]
+
+    @property
+    def feature_dtypes(self) -> list[str]:
+        fn = self.config.dopt_params.get("feature_dtypes", [])
         if isinstance(fn, str):
             fn = config.import_object_by_path(fn)
             if callable(fn):
