@@ -8,6 +8,7 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
 )
+from keras.layers import LeakyReLU
 
 
 def apply_bounds(tensor, bounds):
@@ -40,17 +41,34 @@ class MLP(tf.keras.Model):
         self.normalization_layer = tf.keras.layers.Normalization(
             input_shape=(num_parameters,)
         )
-        self.hidden = tf.keras.layers.Dense(100, activation="relu")
-        self.objectives_backbone = tf.keras.layers.Dense(50, activation="relu")
+
+        # Use LeakyReLU to prevent zeroing of forward pass
+        #  in low-data regimes
+        # -> https://github.com/keras-team/keras/issues/6447
+        self.hidden = tf.keras.layers.Dense(
+            100,
+            activation=LeakyReLU(alpha=0.1),
+            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+        )
+        # self.objectives_backbone = tf.keras.layers.Dense(
+        #     50,
+        #     activation=LeakyReLU(alpha=0.1),
+        #     kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+        # )
         self.objectives_output = tf.keras.layers.Dense(
-            num_objectives, activation="linear", name="objectives"
+            num_objectives,
+            activation="linear",
+            name="objectives",
+            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
         )
         self.constraints_output = tf.keras.layers.Dense(
             num_constraints, activation="sigmoid", name="constraints"
         )
 
         self.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+            optimizer=tf.keras.optimizers.Adam(
+                learning_rate=learning_rate, global_clipnorm=None
+            ),
             loss=(
                 {
                     "objectives": tf.keras.losses.Huber(),
@@ -101,11 +119,10 @@ class MLP(tf.keras.Model):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
 
-        ox = self.objectives_backbone(x)
-
         if self.joint:
+            # x = self.objectives_backbone(x)
             return {
-                "objectives": self.objectives_output(ox),
+                "objectives": self.objectives_output(x),
                 "constraints": self.constraints_output(x),
             }
         else:
