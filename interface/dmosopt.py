@@ -1,4 +1,5 @@
 from machinable import Component
+from machinable.interface import cachable
 from mpi4py import MPI
 from pydantic import BaseModel, ConfigDict, Field, field_validator, TypeAdapter
 from dmosopt import dmosopt
@@ -135,7 +136,7 @@ class Dmosopt(Component):
 
             payload = copy.deepcopy(to_dict(params))
             for k, v in payload.items():
-                if k == 'feature_names':
+                if k == "feature_names":
                     raise ValueError("Use feature_dtypes instead of feature_names")
                 if k not in _t:
                     raise ValueError(f"Invalid option: {k}")
@@ -307,6 +308,7 @@ class Dmosopt(Component):
     def on_write_meta_data(self):
         return MPI.COMM_WORLD.Get_rank() == 0
 
+    @cachable(file=False)
     def load_h5(
         self,
         filepath: Optional[str] = None,
@@ -409,6 +411,7 @@ class Dmosopt(Component):
             "metadata": metadata,
         }
 
+    @cachable(file=False)
     def load_h5_optimizer_data(
         self, filepath: Optional[str] = None, opt_id: Optional[str] = None
     ):
@@ -456,6 +459,7 @@ class Dmosopt(Component):
 
         return {"stats": stats, "params": params}
 
+    @cachable(file=False)
     def load_h5_surrogate_evals(
         self,
         filepath: Optional[str] = None,
@@ -520,9 +524,17 @@ class Dmosopt(Component):
 
         return self.inferred_num_initial_samples
 
-    def get_best(self, region=None, sort_by="-np.std(y, axis=1)"):
+    @cachable()
+    def get_best(
+        self,
+        region: list | tuple | None = None,
+        sort_by: str = "-np.std(y, axis=1)",
+        as_dataframes: bool = True,
+    ):
         if region is None:
             region = slice(None)
+        else:
+            region = slice(*region)
         data = self.load_h5()
         X = data["parameters"].to_numpy()[region]
         if data["constraints"] is not None:
@@ -557,6 +569,12 @@ class Dmosopt(Component):
             for k in best.keys():
                 if best[k] is not None:
                     best[k] = best[k][sort_by]
+
+        if as_dataframes:
+            best["x"] = pd.DataFrame(best["x"], columns=data["parameters"].columns)
+            best["y"] = pd.DataFrame(best["y"], columns=data["objectives"].columns)
+            best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
+            best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
 
         return best
 
