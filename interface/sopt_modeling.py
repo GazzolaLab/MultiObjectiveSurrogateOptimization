@@ -122,7 +122,7 @@ class Modeling(Sopt):
         from matplotlib import pyplot as plt
 
         if feature_selection is None or isinstance(feature_selection, str):
-            feature_selection = self.get_best(sort_by=feature_selection)["f"][0]
+            feature_selection = self.get_best(sort_by=feature_selection)["f"][-1]
         elif isinstance(feature_selection, int):
             feature_selection = self.get_best()["f"][feature_selection]
 
@@ -150,7 +150,7 @@ class Modeling(Sopt):
             label="Rin",
             markeredgecolor="k",
         )
-        ax.set_xlim(200, 600)
+        # ax.set_xlim(200, 600)
         ax.set_ylim(0, 1)
         ax.set_yticks([])
         ax.set_xlabel("Input resistance [MOhm]", fontsize=fontsize)
@@ -169,7 +169,7 @@ class Modeling(Sopt):
             label="Rin",
             markeredgecolor="k",
         )
-        ax.set_xlim(0, 100)
+        # ax.set_xlim(0, 100)
         ax.set_ylim(0, 1)
         ax.set_yticks([])
         ax.set_xlabel("Membrane time constant [ms]", fontsize=fontsize)
@@ -178,6 +178,13 @@ class Modeling(Sopt):
         ax = axsLeft[2]
         # threshold_range = metadata['threshold_target'].reshape((-1,))
         # ax.barh(0.5, threshold_range[1]-threshold_range[0], height=0.3, left=threshold_range[0])
+        ax.vlines(
+            self.config.dopt_params.obj_fun_init_args.protocol_config_dict.Targets.threshold,
+            0,
+            1,
+            linestyle="-",
+            linewidth=2,
+        )
         ax.plot(
             np.mean(feature_selection["threshold"]),
             0.5,
@@ -188,7 +195,7 @@ class Modeling(Sopt):
             label="threshold",
             markeredgecolor="k",
         )
-        ax.set_xlim(-80, -20)
+        # ax.set_xlim(-80, -20)
         ax.set_ylim(0, 1)
         ax.set_yticks([])
         ax.set_xlabel("Spike threshold [mV]", fontsize=fontsize)
@@ -231,14 +238,20 @@ class Modeling(Sopt):
         inj_amp_ISI_adaptation = metadata["fI_target"][0][0]
         target_ISI_adaptation_lb = metadata["ISI_adaptation_target"][0][1]
         target_ISI_adaptation_ub = metadata["ISI_adaptation_target"][0][2]
-
         ax = axsRight[1]
-        ax.bar(
-            inj_amp_ISI_adaptation.astype("str"),
-            height=target_ISI_adaptation_ub - target_ISI_adaptation_lb,
-            bottom=target_ISI_adaptation_lb,
-            width=0.3,
-        )
+        if (target_ISI_adaptation_ub == target_ISI_adaptation_lb).all():
+            ax.axhline(
+                target_ISI_adaptation_ub[0],
+                linestyle="-",
+                linewidth=2,
+            )
+        else:
+            ax.bar(
+                inj_amp_ISI_adaptation.astype("str"),
+                height=target_ISI_adaptation_ub - target_ISI_adaptation_lb,
+                bottom=target_ISI_adaptation_lb,
+                width=0.3,
+            )
         ax.plot(
             inj_amp_ISI_adaptation.astype("str"),
             feature_selection["ISI"]["ratio"],
@@ -254,6 +267,13 @@ class Modeling(Sopt):
         ax.set_ylabel("ISI ratio last/first", fontsize=fontsize)
         ax.tick_params(axis="x", labelsize="x-small")
         ax.tick_params(axis="y", labelsize="x-small")
+
+        import matplotlib.lines as mlines
+
+        target = mlines.Line2D([], [], color="#1f77b4", marker="s", ls="", label="Target")
+        solution = mlines.Line2D([], [], color="#ff6600", marker="o", ls="", label="Solution")
+
+        plt.legend(handles=[target, solution])
 
         return fig
 
