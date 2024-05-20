@@ -531,11 +531,17 @@ class Dmosopt(Component):
         sort_by: str = "-np.std(y, axis=1)",
         as_dataframes: bool = True,
     ):
+        data = self.load_h5()
+
         if region is None:
-            region = slice(None)
+            if len(data["epochs"]) > 10000:
+                # optimize for speed since best solutions will be found in the last epochs
+                region = slice(-10000, None)
+            else:
+                region = slice(None)
         else:
             region = slice(*region)
-        data = self.load_h5()
+
         X = data["parameters"].to_numpy()[region]
         if data["constraints"] is not None:
             C = data["constraints"].to_numpy()[region]
@@ -578,21 +584,53 @@ class Dmosopt(Component):
 
         return best
 
-    def igd(self, ref_front, pf=None):
+    def _front(self, pf):
         if pf is None:
-            pf = self.get_best()["y"]
+            return self.get_best()["y"].to_numpy()
+        elif isinstance(pf, pd.DataFrame):
+            return pf.to_numpy()
+        elif isinstance(pf, pd.Series):
+            return pf.to_numpy()
+        elif isinstance(pf, Dmosopt):
+            return pf.get_best()["y"].to_numpy()
+        else:
+            return np.array(pf)
+
+    def igd(self, ref_front, pf=None):
+        ref_front, pf = self._front(ref_front), self._front(pf)
 
         indicator = indicators.IGD(np.array(pf))
 
         return indicator.do(np.array(ref_front))
 
     def hypervolume(self, ref_point, pf=None):
-        if pf is None:
-            pf = self.get_best()["y"]
+        pf = self._front(pf)
 
         indicator = indicators.Hypervolume(np.array(ref_point))
 
         return indicator.do(np.array(pf))
+
+    def c_metric(self, ref_front, pf=None):
+        """
+        Calculates the set coverage of A over B, i.e. C(A, B),
+        which is the fraction of solutions in B that are
+        dominated by at least one solution in A.
+
+        ref_front: B front array
+        pf: A front array
+        """
+        ref_front, pf = self._front(ref_front), self._front(pf)
+
+        coverage_count = 0
+        for candidate in ref_front:
+            for solution in pf:
+                # solution dominates candidate?
+                if all(r <= c for r, c in zip(solution, candidate)) and any(
+                    r < c for r, c in zip(solution, candidate)
+                ):
+                    coverage_count += 1
+                    break
+        return coverage_count / len(ref_front)
 
     @property
     def dc(self):
