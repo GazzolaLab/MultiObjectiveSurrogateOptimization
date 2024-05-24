@@ -579,8 +579,10 @@ class Dmosopt(Component):
         if as_dataframes:
             best["x"] = pd.DataFrame(best["x"], columns=data["parameters"].columns)
             best["y"] = pd.DataFrame(best["y"], columns=data["objectives"].columns)
-            best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
-            best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
+            if best["f"] is not None:
+                best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
+            if best["c"] is not None:
+                best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
 
         return best
 
