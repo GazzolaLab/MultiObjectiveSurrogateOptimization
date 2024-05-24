@@ -605,6 +605,7 @@ class Dmosopt(Component):
 
         return indicator.do(np.array(ref_front))
 
+    @cachable()
     def hypervolume(self, ref_point, pf=None):
         pf = self._front(pf)
 
