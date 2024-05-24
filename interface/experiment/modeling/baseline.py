@@ -85,27 +85,30 @@ class Baseline(Interface):
 
     def hv(self):
         experiments = self.experiments
+        np.set_printoptions(linewidth=np.inf, suppress=True)
 
         all_fronts = np.vstack([e.get_best()["y"].to_numpy() for e in experiments])
-        ref_point = np.max(all_fronts, axis=0)  # nadir point
-        print("Nadir reference point:", ref_point)
+        fmax = np.max(all_fronts, axis=0).tolist()  # nadir point
+        fmin = np.min(all_fronts, axis=0).tolist()
+        print("Nadir reference point:", fmax)
+        print('Min point', fmin)
 
         d = []
         for exp in experiments:
-            hv = exp.hypervolume(ref_point.tolist())
+            hv = exp.hypervolume([1] * len(fmax), normalize=[fmin, fmax])
+            #hv = exp.hypervolume(fmax)
             d.append(
                 {
                     "key": str(exp.version()[1]),
                     "trial": exp.predicate.get("trial", -1),
                     "hv": hv,
-                    "hv_log": np.log(hv),
                 }
             )
-
+        
         df = pd.DataFrame(d)
 
         df = trial_reduction(df)
-        df = normalize_column(df, "hv")
+        #df = normalize_column(df, "hv")
 
         print(df)
 

@@ -586,7 +586,7 @@ class Dmosopt(Component):
 
         return best
 
-    def _front(self, pf):
+    def front(self, pf=None):
         if pf is None:
             return self.get_best()["y"].to_numpy()
         elif isinstance(pf, pd.DataFrame):
@@ -597,17 +597,30 @@ class Dmosopt(Component):
             return pf.get_best()["y"].to_numpy()
         else:
             return np.array(pf)
+        
+    def norm_front(self, pf, min_max=None):
+        pf = self.front(pf)
+
+        if min_max is None:
+            fmin, fmax = np.min(pf, axis=0), np.max(pf, axis=1)
+        else:
+            fmin, fmax = np.array(min_max[0]), np.array(min_max[1])
+            
+        return (pf - fmin) / (fmax - fmin)
 
     def igd(self, ref_front, pf=None):
-        ref_front, pf = self._front(ref_front), self._front(pf)
+        ref_front, pf = self.front(ref_front), self.front(pf)
 
         indicator = indicators.IGD(np.array(pf))
 
         return indicator.do(np.array(ref_front))
 
     @cachable()
-    def hypervolume(self, ref_point, pf=None):
-        pf = self._front(pf)
+    def hypervolume(self, ref_point, pf=None, normalize=False):
+        if normalize:
+            pf = self.norm_front(pf, normalize)
+        else:
+            pf = self.front(pf)
 
         indicator = indicators.Hypervolume(np.array(ref_point))
 
@@ -622,7 +635,7 @@ class Dmosopt(Component):
         ref_front: B front array
         pf: A front array
         """
-        ref_front, pf = self._front(ref_front), self._front(pf)
+        ref_front, pf = self.front(ref_front), self.front(pf)
 
         coverage_count = 0
         for candidate in ref_front:
