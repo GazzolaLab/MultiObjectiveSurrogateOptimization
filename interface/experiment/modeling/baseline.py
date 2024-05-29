@@ -3,19 +3,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from machinable.utils import object_hash
 
 
 def trial_reduction(df):
-    grouped = df.groupby("key").agg(["mean", "std"])
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    non_numeric_cols = df.select_dtypes(exclude=["number"]).columns.tolist()
 
+    if "key" in non_numeric_cols:
+        non_numeric_cols.remove("key")
+    if "trial" in numeric_cols:
+        numeric_cols.remove("trial")
+
+    grouped = df.groupby("key")[numeric_cols].agg(["mean", "std"])
     grouped.columns = ["_".join(col).strip() for col in grouped.columns.values]
-
     num_trials = df.groupby("key")["trial"].apply(lambda x: (x != -1).sum())
 
     result = grouped.reset_index()
     result["trial"] = result["key"].map(num_trials)
 
-    result = result.drop(["trial_mean", "trial_std"], axis=1)
+    if "trial_mean" in result.columns and "trial_std" in result.columns:
+        result = result.drop(["trial_mean", "trial_std"], axis=1)
+
+    non_numeric_df = df[non_numeric_cols + ["key"]].drop_duplicates(subset=["key"])
+    result = result.merge(non_numeric_df, on="key", how="left")
 
     return result
 
@@ -43,7 +54,7 @@ class Baseline(Interface):
         # no surrogate
         get(protocol).future()
 
-        for trial in range(3):
+        for trial in range(5):
             with get("machinable.scope", {"trial": trial}):
                 for version in [
                     # defaults
@@ -55,9 +66,18 @@ class Baseline(Interface):
                     # mlp with constraints
                     ["~joint_model"],
                     # mlp constraints only with defaults
-                    # ["~joint_model(scope=['feasiblity'])", {"dopt_params.surrogate_method_name": 'gpr'}],
-                    # ["~joint_model(scope=['feasiblity'])", {"dopt_params.surrogate_method_name": 'megp'}],
-                    # ["~joint_model(scope=['feasiblity'])", {"dopt_params.surrogate_method_name": 'mdspp'}],
+                    [
+                        "~joint_model(scope=['feasiblity'])",
+                        {"dopt_params.surrogate_method_name": "gpr"},
+                    ],
+                    [
+                        "~joint_model(scope=['feasiblity'])",
+                        {"dopt_params.surrogate_method_name": "megp"},
+                    ],
+                    [
+                        "~joint_model(scope=['feasiblity'])",
+                        {"dopt_params.surrogate_method_name": "mdspp"},
+                    ],
                     # mlp with constraints and feasibility solving
                     ["~joint_model(feasibility_solving=True)"],
                 ]:
@@ -69,34 +89,41 @@ class Baseline(Interface):
                             )""",
                             {
                                 "nodes": "10",
+                                "dopt_params.n_initial": 50,
                             },
                         ]
                         + version,
                     )
 
-                    experiment.future()
+                    experiment.launch()
 
     @property
     def experiments(self):
         with Execution().deferred() as staged:
             self.launch()
 
-        return staged.executables.filter(lambda x: x.cached())
+        return staged.executables
 
     def hv(self):
         experiments = self.experiments
         np.set_printoptions(linewidth=np.inf, suppress=True)
 
-        all_fronts = np.vstack([e.get_best()["y"].to_numpy() for e in experiments])
+        # region = [0, experiments.map(lambda x: len(x.load_h5()['epochs'])).min()]
+        # region = (0, 9600)
+        region = None
+        print(region)
+
+        all_fronts = np.vstack(
+            [e.get_best(region)["y"].to_numpy() for e in experiments[1:]]
+        )
         fmax = np.max(all_fronts, axis=0).tolist()  # nadir point
         fmin = np.min(all_fronts, axis=0).tolist()
         print("Nadir reference point:", fmax)
-        print('Min point', fmin)
+        print("Min point", fmin)
 
         d = []
-        for exp in experiments:
-            hv = exp.hypervolume([1] * len(fmax), normalize=[fmin, fmax])
-            #hv = exp.hypervolume(fmax)
+        for exp in experiments[1:]:
+            hv = exp.hypervolume([1] * len(fmax), region, normalize=[fmin, fmax])
             d.append(
                 {
                     "key": str(exp.version()[1]),
@@ -104,11 +131,31 @@ class Baseline(Interface):
                     "hv": hv,
                 }
             )
-        
+
         df = pd.DataFrame(d)
 
         df = trial_reduction(df)
-        #df = normalize_column(df, "hv")
+
+        print(df)
+
+    def igd(self):
+        experiments = self.experiments
+        ref_front = experiments[0].get_best()["y"].to_numpy()
+        d = []
+        for exp in experiments[1:]:
+            igd = exp.igd(ref_front)
+            d.append(
+                {
+                    "key": object_hash(exp.context.config)[:10],
+                    "name": str(exp.version()[1:]),
+                    "trial": exp.predicate.get("trial", -1),
+                    "igd": igd,
+                }
+            )
+
+        df = pd.DataFrame(d)
+
+        df = trial_reduction(df)
 
         print(df)
 
