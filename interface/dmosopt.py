@@ -307,6 +307,10 @@ class Dmosopt(Component):
 
     def on_write_meta_data(self):
         return MPI.COMM_WORLD.Get_rank() == 0
+    
+    def on_commit(self):
+        if MPI.COMM_WORLD.Get_rank() > 0:
+            return False
 
     @cachable(file=False)
     def load_h5(
@@ -601,7 +605,7 @@ class Dmosopt(Component):
     def norm_front(self, pf, min_max=None):
         pf = self.front(pf)
 
-        if min_max is None:
+        if not isinstance(min_max, (list, tuple)):
             fmin, fmax = np.min(pf, axis=0), np.max(pf, axis=1)
         else:
             fmin, fmax = np.array(min_max[0]), np.array(min_max[1])
