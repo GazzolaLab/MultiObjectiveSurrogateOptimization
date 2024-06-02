@@ -33,8 +33,11 @@ class StorageUpload(Execution):
 
         updates = []
         inserts = []
+        processed = set()
 
-        for executable in self.executables:
+        def _push(executable):
+            if executable.uuid in processed:
+                return
             status = ""
             staged = True
             if self.config.cached_only and not executable.cached():
@@ -55,6 +58,17 @@ class StorageUpload(Execution):
                 "Yes" if staged else "No",
                 executable.local_directory(),
             )
+            
+            processed.add(executable.uuid)
+
+        for e in self.executables:
+            _push(e)
+            
+        if int(self.config.related) > 0:
+            table.add_row('RELATED:', None, None, None)
+            for interface in inserts + updates:
+                for r in interface.related(deep=int(self.config.related) == 2).all():
+                    _push(r)
 
         console = Console()
         console.print(table)
@@ -75,5 +89,3 @@ class StorageUpload(Execution):
 
         for u in updates:
             storage.update(u)
-
-        # TODO: relations
