@@ -1,7 +1,164 @@
 from interface.dmosopt import Dmosopt
-
+import numpy as np
+from sklearn.metrics import (
+    mean_absolute_error,
+    median_absolute_error
+)
 
 class Sopt(Dmosopt):
+
+    @property
+    def scope(self) -> list[str]:
+        if self.config.dopt_params.get("surrogate_custom_training", None) is None:
+            return []
+
+        if (
+            k := self.config.dopt_params.get("surrogate_custom_training_kwargs", None)
+        ) is not None:
+            return k.get("scope", [])
+
+        return []
+
+    @property
+    def custom_surrogate_name(self) -> str:
+        return "joint-" + (
+            "c+o"
+            if self.config.dopt_params.get("surrogate_custom_training_kwargs", {}).get(
+                "joint", True
+            )
+            else "c"
+        )
+
+    @property
+    def surrogate_method_name(self) -> str:
+        if "objective" in self.scope:
+            return self.custom_surrogate_name
+
+        return super().surrogate_method_name
+
+    @property
+    def mO(self) -> str:
+        return self.surrogate_method_name or "-"
+
+    @property
+    def mC(self) -> str:
+        if "feasiblity" in self.scope:
+            return self.custom_surrogate_name
+
+        if self.config.dopt_params.get("feasiblity", None) is True:
+            return "logR"
+
+        return "-"
+
+    @property
+    def mS(self):
+        if "sensitivity" in self.scope:
+            return self.custom_surrogate_name
+
+        if (
+            name := self.config.dopt_params.get("sensitivity_method_name", None)
+        ) is not None:
+            return name
+
+        return "-"
+
+    @property
+    def m(self):
+        return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
+
+    def get_model(self, name):
+        if name == "mlp" or "joint" in name:
+            from models.mlp import MLP
+
+            return MLP(
+                self.num_parameters,
+                self.num_constraints,
+                self.num_objectives,
+                joint=self.config.dopt_params.get(
+                    "surrogate_custom_training_kwargs", {}
+                ).get("joint", True),
+                # xlb=self.xlb,
+                # xub=self.xub,
+            )
+
+        class _Wrapper:
+            def __init__(self, name, xlb, xub) -> None:
+                self.xlb = np.array(xlb)
+                self.xub = np.array(xub)
+                self.model = None
+                if name == "gpr":
+                    from dmosopt.model import GPR_Matern
+
+                    self.model_cls = GPR_Matern
+                elif name == "megp":
+                    from dmosopt.model import MEGP_Matern
+
+                    self.model_cls = MEGP_Matern
+
+            def autofit(
+                self, x, y, yC, *args, **kwargs
+            ):
+                x = np.nan_to_num(x)
+                y = np.nan_to_num(y)
+                yC = np.nan_to_num(yC)
+                
+                feasible = np.argwhere(np.all(yC > 0.0, axis=1))
+                if len(feasible) > 0:
+                    feasible = feasible.ravel()
+                    x = x[feasible, :]
+                    y = y[feasible, :]
+                    yC = yC[feasible, :]
+                from dmosopt import MOEA
+                x, y = MOEA.remove_duplicates(x, y)
+
+                self.model = self.model_cls(
+                    xin=x,
+                    yin=y,
+                    nInput=x.shape[1],
+                    nOutput=y.shape[1],
+                    xlb=self.xlb,
+                    xub=self.xub,
+                    **kwargs,
+                )
+
+            def autoeval(
+                self,
+                x,
+                y,
+                yC,
+                verbose=2,
+            ):
+                x = np.nan_to_num(x)
+                y = np.nan_to_num(y)
+                yC = np.nan_to_num(yC)
+
+                y_pred = self.model.evaluate(x)
+
+                return {
+                    "epochs": 1.0,
+                    "accuracy": 0.0,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "mdae": float(
+                        median_absolute_error(
+                            y,
+                            y_pred,
+                        )
+                    ),
+                    "mae": float(
+                        mean_absolute_error(
+                            y,
+                            y_pred,
+                        )
+                    ),              
+                }
+
+        return _Wrapper(name, self.xlb, self.xub)
+
+    def label(self):
+        return self.m
+
     def version_joint_model(
         self,
         scope=None,
