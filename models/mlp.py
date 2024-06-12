@@ -7,8 +7,17 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     mean_absolute_error,
+    median_absolute_error,
 )
+from scipy.stats import spearmanr
 from keras.layers import LeakyReLU
+
+
+def mase_loss(y_true, y_pred):
+    # https://en.wikipedia.org/wiki/Mean_absolute_scaled_error
+    mae = tf.reduce_mean(tf.abs(y_true - y_pred))
+    mad = tf.reduce_mean(tf.abs(y_true - tf.reduce_mean(y_pred)))
+    return mae / (mad + 1e-7)
 
 
 def apply_bounds(tensor, bounds):
@@ -21,6 +30,29 @@ def apply_bounds(tensor, bounds):
     )
 
 
+def spearmanr_metric(y_true, y_pred):
+    num_objectives = y_true.shape[1]
+    spearman_scores = []
+    for i in range(num_objectives):
+        coef, _ = spearmanr(y_true[:, i], y_pred[:, i])
+        spearman_scores.append(coef)
+    return np.mean(spearman_scores)
+
+
+class BoundsNormalization(tf.keras.layers.Layer):
+    def __init__(self, xlb, xub, **kwargs):
+        super().__init__(**kwargs)
+        xrg = np.array(xub) - np.array(xlb)
+        self.xlb = tf.convert_to_tensor(xlb, dtype=tf.float32)
+        self.xrg = tf.convert_to_tensor(xrg, dtype=tf.float32)
+
+    def call(self, inputs):
+        return (inputs - self.xlb) / self.xrg
+
+    def adapt(self, x):
+        """no-op"""
+
+
 class MLP(tf.keras.Model):
     def __init__(
         self,
@@ -29,6 +61,9 @@ class MLP(tf.keras.Model):
         num_objectives,
         learning_rate=0.1,
         joint=True,
+        multihead=False,
+        xlb=None,
+        xub=None,
         **kwargs,
     ):
         super(MLP, self).__init__(**kwargs)
@@ -37,30 +72,43 @@ class MLP(tf.keras.Model):
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
         self.joint = joint
+        self.multihead = multihead
+        self.xlb = xlb
+        self.xub = xub
 
-        self.normalization_layer = tf.keras.layers.Normalization(
-            input_shape=(num_parameters,)
-        )
+        if xlb is not None and xub is not None:
+            self.normalization_layer = BoundsNormalization(xlb, xub)
+        else:
+            self.normalization_layer = tf.keras.layers.Normalization()
 
         # Use LeakyReLU to prevent zeroing of forward pass
         #  in low-data regimes
         # -> https://github.com/keras-team/keras/issues/6447
         self.hidden = tf.keras.layers.Dense(
             100,
-            activation=LeakyReLU(alpha=0.1),
+            activation=LeakyReLU(),
             kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
         )
-        # self.objectives_backbone = tf.keras.layers.Dense(
-        #     50,
-        #     activation=LeakyReLU(alpha=0.1),
-        #     kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
-        # )
-        self.objectives_output = tf.keras.layers.Dense(
-            num_objectives,
-            activation="linear",
-            name="objectives",
-            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
-        )
+        if multihead:
+            self.heads = [
+                tf.keras.layers.Dense(
+                    1, activation="relu", name=f"regression_head_{head}"
+                )
+                for head in range(self.num_objectives)
+            ]
+
+            def multihead_regression(x):
+                return tf.keras.layers.Concatenate()([head(x) for head in self.heads])
+
+            self.objectives_output = multihead_regression
+        else:
+            self.objectives_output = tf.keras.layers.Dense(
+                num_objectives,
+                activation="relu",
+                name="objectives",
+                kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+            )
+
         self.constraints_output = tf.keras.layers.Dense(
             num_constraints, activation="sigmoid", name="constraints"
         )
@@ -93,16 +141,16 @@ class MLP(tf.keras.Model):
             name="inverse_input",
         )
 
-        self.min_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
-            name="min_yR",
-        )
-        self.max_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
-            name="max_yR",
-        )
+        # self.min_yR = tf.Variable(
+        #     initial_value=np.zeros([num_objectives]),
+        #     dtype=tf.float32,
+        #     name="min_yR",
+        # )
+        # self.max_yR = tf.Variable(
+        #     initial_value=np.zeros([num_objectives]),
+        #     dtype=tf.float32,
+        #     name="max_yR",
+        # )
 
         self._last_fit_epochs = -1
 
@@ -115,18 +163,41 @@ class MLP(tf.keras.Model):
             self.joint,
         )
 
+    def build(self, input_shape):
+        self.call(tf.ones([1, input_shape[-1]]))
+
     def call(self, inputs):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
 
         if self.joint:
-            # x = self.objectives_backbone(x)
             return {
                 "objectives": self.objectives_output(x),
                 "constraints": self.constraints_output(x),
             }
         else:
             return self.constraints_output(x)
+
+    def preprocess(self, x, y, yC, remove_outliers=True, nan_to_max=False):
+        y = np.nan_to_num(y)
+
+        # filter outliers
+        mask = slice(None)
+        if remove_outliers:
+            ylog = np.log(y + 1)
+            ylmean = np.mean(ylog, axis=0)
+            ylstd = np.std(ylog, axis=0)
+            zscores = (ylog - ylmean) / ylstd
+            outlier = np.any(np.abs(zscores) > 3, axis=1)
+            mask = ~outlier
+
+        # replace NaNs with 3*maximum (disregarding outliers)
+        if nan_to_max:
+            m = np.max(np.nan_to_num(y[mask]), axis=0)
+            for c in range(y.shape[1]):
+                y[:, c] = np.nan_to_num(y[:, c], nan=3 * m[c])
+
+        return x[mask], y[mask], yC[mask]
 
     def autofit(
         self,
@@ -138,12 +209,10 @@ class MLP(tf.keras.Model):
         verbose=2,
         **kwargs,
     ):
-        x = np.nan_to_num(x)
-        y = np.nan_to_num(y)
-        yC = np.nan_to_num(yC)
-
         if epochs == "auto":
             epochs = self.autoepoch(x, y, yC, verbose=0)
+
+        x, y, yC = self.preprocess(x, y, yC)
 
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
@@ -166,10 +235,7 @@ class MLP(tf.keras.Model):
         yC,
         verbose=2,
     ):
-        x = np.nan_to_num(x)
-        y = np.nan_to_num(y)
-        yC = np.nan_to_num(yC)
-
+        x, y, yC = self.preprocess(x, y, yC)
         if self.joint:
             Y = {"objectives": y, "constraints": yC}
         else:
@@ -181,9 +247,7 @@ class MLP(tf.keras.Model):
         if x.shape[0] < n_splits * 2:
             return 1
 
-        x = np.nan_to_num(x)
-        y = np.nan_to_num(y)
-        yC = np.nan_to_num(yC)
+        x, y, yC = self.preprocess(x, y, yC)
 
         kf = KFold(n_splits=n_splits, shuffle=True)
         stopped_after_epochs = []
@@ -209,7 +273,7 @@ class MLP(tf.keras.Model):
 
             total_epochs = 0
             while total_epochs < timeout_epochs:
-                p(f"{total_epochs} / {timeout_epochs}")
+                p(f"{total_epochs} / {timeout_epochs} ({epoch_increment})")
                 if self.joint:
                     y_ = {"objectives": y_train, "constraints": yC_train}
                     val_ = (
@@ -226,27 +290,27 @@ class MLP(tf.keras.Model):
                     X_train,
                     y_,
                     validation_data=val_,
-                    epochs=epoch_increment,
+                    epochs=total_epochs + epoch_increment,
                     batch_size=2048,
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
                             monitor=(
-                                "val_constraints_loss" if self.joint else "val_loss"
+                                "val_objectives_mae" if self.joint else "val_loss"
                             ),
                             patience=int(epoch_increment / 2),
                             restore_best_weights=False,
+                            mode="min",
                         )
                     ],
                     verbose=verbose,
                     initial_epoch=total_epochs,
                 )
-                if "loss" in history.history:
-                    epochs_this_round = len(history.history["loss"])
-                else:
-                    epochs_this_round = 1
+                epochs_this_round = len(history.epoch)
                 total_epochs += epochs_this_round
-
                 if epochs_this_round < epoch_increment:
+                    p(
+                        f"Stopping at {epochs_this_round} < {epoch_increment} (total: {total_epochs})"
+                    )
                     break
 
             p(f"Stopped after {total_epochs} for split {s}")
@@ -270,7 +334,7 @@ class MLP(tf.keras.Model):
             return super().fit(
                 x,
                 {
-                    "objectives": self.norm_output(y["objectives"], adapt=True),
+                    "objectives": y["objectives"],
                     "constraints": y["constraints"],
                 },
                 *args,
@@ -306,18 +370,22 @@ class MLP(tf.keras.Model):
                 (y_pred["constraints"] > 0.5).astype(int).all(axis=1).astype(int)
             )
 
-            yR = np.nan_to_num(self.norm_output(y_pred["objectives"], inverse=True))
-
             return {
                 "epochs": self._last_fit_epochs,
                 "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
                 "precision": float(precision_score(y_test_prime, y_pred_prime)),
                 "recall": float(recall_score(y_test_prime, y_pred_prime)),
                 "f1": float(f1_score(y_test_prime, y_pred_prime)),
-                "objective_mae": float(
+                "mdae": float(
+                    median_absolute_error(
+                        y_test["objectives"],
+                        y_pred["objectives"],
+                    )
+                ),
+                "mae": float(
                     mean_absolute_error(
                         y_test["objectives"],
-                        np.maximum(np.zeros_like(yR), yR),
+                        y_pred["objectives"],
                     )
                 ),
             }
@@ -362,9 +430,7 @@ class MLP(tf.keras.Model):
         return tf.keras.metrics.binary_accuracy(y_true, y_pred)
 
     def predict_objectives(self, X, nan_to_num=True, max_zero=True, verbose=0):
-        yR = self.norm_output(
-            self.predict(X, verbose=verbose)["objectives"], inverse=True
-        )
+        yR = self.predict(X, verbose=verbose)["objectives"]
 
         if nan_to_num:
             yR = np.nan_to_num(yR)
