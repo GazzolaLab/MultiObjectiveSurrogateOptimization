@@ -251,7 +251,7 @@ class MLP(tf.keras.Model):
 
         kf = KFold(n_splits=n_splits, shuffle=True)
         stopped_after_epochs = []
-        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 1000))
+        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 2500))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
 
         def p(*args, **kwargs):
@@ -300,7 +300,11 @@ class MLP(tf.keras.Model):
                             mode="min",
                         )
                         for mon in (
-                            ["val_objectives_loss", "val_constraints_loss"]
+                            [
+                                # prioritize objective as it is most crucial for
+                                #  the overall optimization outcome
+                                "val_objectives_loss",  # "val_constraints_loss"
+                            ]
                             if self.joint
                             else ["val_loss"]
                         )

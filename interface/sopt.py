@@ -1,9 +1,7 @@
 from interface.dmosopt import Dmosopt
 import numpy as np
-from sklearn.metrics import (
-    mean_absolute_error,
-    median_absolute_error
-)
+from sklearn.metrics import mean_absolute_error, median_absolute_error
+
 
 class Sopt(Dmosopt):
 
@@ -66,7 +64,7 @@ class Sopt(Dmosopt):
     def m(self):
         return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
 
-    def get_model(self, name):
+    def get_model(self, name, **model_options):
         if name == "mlp" or "joint" in name:
             from models.mlp import MLP
 
@@ -79,6 +77,7 @@ class Sopt(Dmosopt):
                 ).get("joint", True),
                 # xlb=self.xlb,
                 # xub=self.xub,
+                **model_options,
             )
 
         class _Wrapper:
@@ -95,13 +94,23 @@ class Sopt(Dmosopt):
 
                     self.model_cls = MEGP_Matern
 
-            def autofit(
-                self, x, y, yC, *args, **kwargs
-            ):
+            def preprocess(self, x, y, yC):
                 x = np.nan_to_num(x)
                 y = np.nan_to_num(y)
                 yC = np.nan_to_num(yC)
-                
+
+                # remove outliers
+                ylog = np.log(y + 1)
+                ylmean = np.mean(ylog, axis=0)
+                ylstd = np.std(ylog, axis=0)
+                zscores = (ylog - ylmean) / ylstd
+                outlier = np.any(np.abs(zscores) > 3, axis=1)
+
+                return x[~outlier], y[~outlier], yC[~outlier]
+
+            def autofit(self, x, y, yC, *args, **kwargs):
+                x, y, yC = self.preprocess(x, y, yC)
+
                 feasible = np.argwhere(np.all(yC > 0.0, axis=1))
                 if len(feasible) > 0:
                     feasible = feasible.ravel()
@@ -109,6 +118,7 @@ class Sopt(Dmosopt):
                     y = y[feasible, :]
                     yC = yC[feasible, :]
                 from dmosopt import MOEA
+
                 x, y = MOEA.remove_duplicates(x, y)
 
                 self.model = self.model_cls(
@@ -118,7 +128,7 @@ class Sopt(Dmosopt):
                     nOutput=y.shape[1],
                     xlb=self.xlb,
                     xub=self.xub,
-                    **kwargs,
+                    **model_options,
                 )
 
             def autoeval(
@@ -128,9 +138,7 @@ class Sopt(Dmosopt):
                 yC,
                 verbose=2,
             ):
-                x = np.nan_to_num(x)
-                y = np.nan_to_num(y)
-                yC = np.nan_to_num(yC)
+                x, y, yC = self.preprocess(x, y, yC)
 
                 y_pred = self.model.evaluate(x)
 
@@ -151,7 +159,7 @@ class Sopt(Dmosopt):
                             y,
                             y_pred,
                         )
-                    ),              
+                    ),
                 }
 
         return _Wrapper(name, self.xlb, self.xub)
