@@ -163,7 +163,7 @@ class MLP(tf.keras.Model):
             self.joint,
         )
 
-    def build(self, input_shape):
+    def build_(self, input_shape):
         self.call(tf.ones([1, input_shape[-1]]))
 
     def call(self, inputs):
@@ -243,7 +243,7 @@ class MLP(tf.keras.Model):
 
         return self.eval(x, Y, verbose=verbose)
 
-    def autoepoch(self, x, y, yC, n_splits=4, timeout_samples=1e8, verbose=1):
+    def autoepoch(self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1):
         if x.shape[0] < n_splits * 2:
             return 1
 
@@ -294,12 +294,15 @@ class MLP(tf.keras.Model):
                     batch_size=2048,
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
-                            monitor=(
-                                "val_objectives_mae" if self.joint else "val_loss"
-                            ),
+                            monitor=mon,
                             patience=int(epoch_increment / 2),
                             restore_best_weights=False,
                             mode="min",
+                        )
+                        for mon in (
+                            ["val_objectives_loss", "val_constraints_loss"]
+                            if self.joint
+                            else ["val_loss"]
                         )
                     ],
                     verbose=verbose,
