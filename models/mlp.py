@@ -59,8 +59,8 @@ class MLP(tf.keras.Model):
         num_parameters,
         num_constraints,
         num_objectives,
+        mode="c+o",
         learning_rate=0.1,
-        joint=True,
         multihead=False,
         xlb=None,
         xub=None,
@@ -71,7 +71,9 @@ class MLP(tf.keras.Model):
         self.num_constraints = num_constraints
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
-        self.joint = joint
+        if mode not in ["c+o", "c", "o"]:
+            raise ValueError("Invalid mode")
+        self.mode = mode
         self.multihead = multihead
         self.xlb = xlb
         self.xub = xub
@@ -113,26 +115,28 @@ class MLP(tf.keras.Model):
             num_constraints, activation="sigmoid", name="constraints"
         )
 
+        if self.mode == "c+o":
+            loss = {
+                "objectives": tf.keras.losses.Huber(),
+                "constraints": "binary_crossentropy",
+            }
+            metrics = {
+                "objectives": ["mae"],
+                "constraints": ["acc"],
+            }
+        elif self.mode == "c":
+            loss = "binary_crossentropy"
+            metrics = "acc"
+        elif self.mode == "o":
+            loss = tf.keras.losses.Huber()
+            metrics = "mae"
+
         self.compile(
             optimizer=tf.keras.optimizers.Adam(
                 learning_rate=learning_rate, global_clipnorm=None
             ),
-            loss=(
-                {
-                    "objectives": tf.keras.losses.Huber(),
-                    "constraints": "binary_crossentropy",
-                }
-                if joint
-                else "binary_crossentropy"
-            ),
-            metrics=(
-                {
-                    "objectives": ["mae"],
-                    "constraints": ["acc"],
-                }
-                if joint
-                else [self.global_accuracy]
-            ),
+            loss=loss,
+            metrics=metrics,
         )
 
         self.inverse_input_sample = tf.Variable(
@@ -159,8 +163,11 @@ class MLP(tf.keras.Model):
             self.num_parameters,
             self.num_constraints,
             self.num_objectives,
+            self.mode,
             self.learning_rate,
-            self.joint,
+            self.multihead,
+            self.xlb,
+            self.xub,
         )
 
     def build_(self, input_shape):
@@ -170,13 +177,17 @@ class MLP(tf.keras.Model):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
 
-        if self.joint:
+        if self.mode == "c+o":
             return {
                 "objectives": self.objectives_output(x),
                 "constraints": self.constraints_output(x),
             }
-        else:
+
+        if self.mode == "c":
             return self.constraints_output(x)
+
+        if self.mode == "o":
+            return self.objectives_output(x)
 
     def preprocess(self, x, y, yC, remove_outliers=True, nan_to_max=False):
         y = np.nan_to_num(y)
@@ -214,10 +225,12 @@ class MLP(tf.keras.Model):
 
         x, y, yC = self.preprocess(x, y, yC)
 
-        if self.joint:
+        if self.mode == "c+o":
             Y = {"objectives": y, "constraints": yC}
-        else:
+        elif self.mode == "c":
             Y = yC
+        elif self.mode == "o":
+            Y = y
 
         return self.fit(
             x,
@@ -236,10 +249,12 @@ class MLP(tf.keras.Model):
         verbose=2,
     ):
         x, y, yC = self.preprocess(x, y, yC)
-        if self.joint:
+        if self.mode == "c+o":
             Y = {"objectives": y, "constraints": yC}
-        else:
+        elif self.mode == "c":
             Y = yC
+        elif self.mode == "o":
+            Y = y
 
         return self.eval(x, Y, verbose=verbose)
 
@@ -274,7 +289,7 @@ class MLP(tf.keras.Model):
             total_epochs = 0
             while total_epochs < timeout_epochs:
                 p(f"{total_epochs} / {timeout_epochs} ({epoch_increment})")
-                if self.joint:
+                if self.mode == "c+o":
                     y_ = {"objectives": y_train, "constraints": yC_train}
                     val_ = (
                         X_val,
@@ -283,9 +298,12 @@ class MLP(tf.keras.Model):
                             "constraints": yC_val,
                         },
                     )
-                else:
+                elif self.mode == "c":
                     y_ = yC_train
                     val_ = (X_val, yC_val)
+                elif self.mode == "o":
+                    y_ = y_train
+                    val_ = (X_val, y_val)
                 history = self.fit(
                     X_train,
                     y_,
@@ -305,7 +323,7 @@ class MLP(tf.keras.Model):
                                 #  the overall optimization outcome
                                 "val_objectives_loss",  # "val_constraints_loss"
                             ]
-                            if self.joint
+                            if self.mode == "c+o"
                             else ["val_loss"]
                         )
                     ],
@@ -337,7 +355,7 @@ class MLP(tf.keras.Model):
 
         self._last_fit_epochs = epochs
 
-        if self.joint:
+        if self.mode == "c+o":
             return super().fit(
                 x,
                 {
@@ -366,7 +384,7 @@ class MLP(tf.keras.Model):
             return (yR - self.min_yR) / (self.max_yR - self.min_yR)
 
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
-        if self.joint:
+        if self.mode == "c+o":
             assert (
                 not per_feature
             ), "Joint model does not support per_feature evaluation"
@@ -396,7 +414,8 @@ class MLP(tf.keras.Model):
                     )
                 ),
             }
-        else:
+
+        if self.mode == "c":
             y_prob = self.predict(X_test, verbose=verbose)
             y_pred = (y_prob > 0.5).astype(int)
 
@@ -429,6 +448,23 @@ class MLP(tf.keras.Model):
                 "f1": float(f1_score(y_test_prime, y_pred_prime)),
             }
 
+        if self.mode == "o":
+            y_pred = self.predict(X_test, verbose=verbose)
+            return {
+                "mdae": float(
+                    median_absolute_error(
+                        y_test,
+                        y_pred,
+                    )
+                ),
+                "mae": float(
+                    mean_absolute_error(
+                        y_test,
+                        y_pred,
+                    )
+                ),
+            }
+
     def global_accuracy(self, y_true, y_pred):
         y_true = tf.cast(y_true, tf.bool)
         y_pred = tf.cast(y_pred, tf.bool)
@@ -456,6 +492,8 @@ class MLP(tf.keras.Model):
         max_steps_filter=None,
         use_joint_loss=False,
     ):
+        if self.mode == "o":
+            raise RuntimeError("Invalid mode")
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
 
@@ -499,7 +537,7 @@ class MLP(tf.keras.Model):
 
                 prediction = self(z)
                 logits = prediction
-                if self.joint:
+                if self.mode == "c+o":
                     logits = prediction["constraints"]
                 loss = loss_fn(
                     tf.constant(
@@ -508,7 +546,7 @@ class MLP(tf.keras.Model):
                     ),
                     logits,
                 )
-                if self.joint and use_joint_loss:
+                if self.mode == "c+o" and use_joint_loss:
                     # add penalty for regression targets
                     loss = loss + tf.reduce_sum(
                         tf.math.maximum(prediction["objectives"], 0)
@@ -581,7 +619,7 @@ class MLP(tf.keras.Model):
             tape.watch(X)
             y_pred = self(X)
 
-        if self.joint:
+        if self.mode == "c+o":
             return {
                 k: reduction(tape.gradient(y_pred[k], X)).numpy() for k in y_pred.keys()
             }
