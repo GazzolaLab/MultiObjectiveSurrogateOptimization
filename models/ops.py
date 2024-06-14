@@ -13,8 +13,11 @@ def mlp(
     xub,
     file_path,
     options,
-    scope,
-    joint=True,
+    # -
+    mode='c+o',
+    objectives=True,
+    constraints=False,
+    sensitivity=False,
     feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
@@ -50,7 +53,7 @@ def mlp(
             num_parameters=Xinit.shape[1],
             num_constraints=C.shape[1],
             num_objectives=Yinit.shape[1],
-            joint=joint,
+            mode=mode,
         )
     )
 
@@ -109,9 +112,9 @@ def mlp(
 
     return (
         Optimizer.wrapped,
-        model if "objective" in scope else None,
-        model if "feasiblity" in scope else None,
-        model if "sensitivity" in scope else None,
+        model if objectives else None,
+        model if constraints else None,
+        model if sensitivity else None,
     )
 
 

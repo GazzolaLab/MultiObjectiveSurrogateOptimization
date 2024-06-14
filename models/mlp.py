@@ -473,7 +473,10 @@ class MLP(tf.keras.Model):
         return tf.keras.metrics.binary_accuracy(y_true, y_pred)
 
     def predict_objectives(self, X, nan_to_num=True, max_zero=True, verbose=0):
-        yR = self.predict(X, verbose=verbose)["objectives"]
+        yR = self.predict(X, verbose=verbose)
+        
+        if self.mode == 'c+o':
+            yR = yR["objectives"]
 
         if nan_to_num:
             yR = np.nan_to_num(yR)

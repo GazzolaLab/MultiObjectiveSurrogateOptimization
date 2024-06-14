@@ -72,9 +72,9 @@ class Sopt(Dmosopt):
                 self.num_parameters,
                 self.num_constraints,
                 self.num_objectives,
-                joint=self.config.dopt_params.get(
-                    "surrogate_custom_training_kwargs", {}
-                ).get("joint", True),
+                # joint=self.config.dopt_params.get(
+                #     "surrogate_custom_training_kwargs", {}
+                # ).get("joint", True),
                 # xlb=self.xlb,
                 # xub=self.xub,
                 **model_options,
@@ -169,29 +169,14 @@ class Sopt(Dmosopt):
 
     def version_joint_model(
         self,
-        scope=None,
-        joint=True,
-        feasibility_solving=False,
-        feasibility_max_iterations=50,
-        feasibility_use_joint_loss=True,
-        feasibility_max_steps_filter=True,
+        **kwargs
     ):
-        if scope is None:
-            scope = [
-                "objective",
-                "feasiblity",
-            ]
+        if kwargs.get('mode', 'c+o') not in ['c+o', 'c', 'o']:
+            raise ValueError("Invalid mode")
         return {
             "dopt_params": {
                 "surrogate_custom_training": "models.ops.mlp",
-                "surrogate_custom_training_kwargs": {
-                    "scope": scope,
-                    "joint": joint,
-                    "feasibility_solving": feasibility_solving,
-                    "feasibility_max_iterations": feasibility_max_iterations,
-                    "feasibility_use_joint_loss": feasibility_use_joint_loss,
-                    "feasibility_max_steps_filter": feasibility_max_steps_filter,
-                },
+                "surrogate_custom_training_kwargs": kwargs,
             }
         }
 
