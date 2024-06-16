@@ -61,6 +61,7 @@ class MLP(tf.keras.Model):
         num_objectives,
         mode="c+o",
         learning_rate=0.1,
+        outlier_threshold=2,
         multihead=False,
         xlb=None,
         xub=None,
@@ -71,6 +72,7 @@ class MLP(tf.keras.Model):
         self.num_constraints = num_constraints
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
+        self.outlier_threshold=outlier_threshold
         if mode not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
         self.mode = mode
@@ -158,6 +160,9 @@ class MLP(tf.keras.Model):
 
         self._last_fit_epochs = -1
 
+    def label(self):
+        return 'joint-' + self.mode
+
     def new(self):
         return self.__class__(
             self.num_parameters,
@@ -199,7 +204,7 @@ class MLP(tf.keras.Model):
             ylmean = np.mean(ylog, axis=0)
             ylstd = np.std(ylog, axis=0)
             zscores = (ylog - ylmean) / ylstd
-            outlier = np.any(np.abs(zscores) > 3, axis=1)
+            outlier = np.any(np.abs(zscores) > self.outlier_threshold, axis=1)
             mask = ~outlier
 
         # replace NaNs with 3*maximum (disregarding outliers)
