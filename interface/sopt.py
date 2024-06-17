@@ -6,30 +6,23 @@ from sklearn.metrics import mean_absolute_error, median_absolute_error
 class Sopt(Dmosopt):
 
     @property
-    def scope(self) -> list[str]:
-        if self.config.dopt_params.get("surrogate_custom_training", None) is None:
-            return []
+    def custom_training(self) -> bool:
+        return self.config.dopt_params.get("surrogate_custom_training", None) is not None
 
-        if (
-            k := self.config.dopt_params.get("surrogate_custom_training_kwargs", None)
-        ) is not None:
-            return k.get("scope", [])
+    @property
+    def custom_training_kwargs(self) -> dict:
+        if not self.custom_training:
+            return {}
 
-        return []
+        return self.config.dopt_params.get("surrogate_custom_training_kwargs", {})
 
     @property
     def custom_surrogate_name(self) -> str:
-        return "joint-" + (
-            "c+o"
-            if self.config.dopt_params.get("surrogate_custom_training_kwargs", {}).get(
-                "joint", True
-            )
-            else "c"
-        )
+        return "joint-" + self.custom_training_kwargs.get("mode", 'c+o')
 
     @property
     def surrogate_method_name(self) -> str:
-        if "objective" in self.scope:
+        if self.custom_training and self.custom_training_kwargs.get('objectives', True):
             return self.custom_surrogate_name
 
         return super().surrogate_method_name
@@ -40,7 +33,7 @@ class Sopt(Dmosopt):
 
     @property
     def mC(self) -> str:
-        if "feasiblity" in self.scope:
+        if self.custom_training_kwargs.get('constraints', False):
             return self.custom_surrogate_name
 
         if self.config.dopt_params.get("feasiblity", None) is True:
@@ -50,7 +43,7 @@ class Sopt(Dmosopt):
 
     @property
     def mS(self):
-        if "sensitivity" in self.scope:
+        if self.custom_training_kwargs.get('sensitivity', False):
             return self.custom_surrogate_name
 
         if (
@@ -104,7 +97,7 @@ class Sopt(Dmosopt):
                 ylmean = np.mean(ylog, axis=0)
                 ylstd = np.std(ylog, axis=0)
                 zscores = (ylog - ylmean) / ylstd
-                outlier = np.any(np.abs(zscores) > 3, axis=1)
+                outlier = np.any(np.abs(zscores) > 2, axis=1)
 
                 return x[~outlier], y[~outlier], yC[~outlier]
 
@@ -165,7 +158,13 @@ class Sopt(Dmosopt):
         return _Wrapper(name, self.xlb, self.xub)
 
     def label(self):
-        return self.m
+        if self.config.dopt_params.get("surrogate_custom_training", None) is None:
+            return self.m
+        
+        fs = self.custom_training_kwargs.get('feasibility_solving', False)
+        fs = 'fs' if fs else '-'
+        
+        return self.m + "[" + fs + "]"
 
     def version_joint_model(
         self,

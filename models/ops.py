@@ -18,7 +18,7 @@ def mlp(
     objectives=True,
     constraints=False,
     sensitivity=False,
-    outlier_treshold=3.,
+    outlier_threshold=3.,
     feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
@@ -55,7 +55,7 @@ def mlp(
             num_constraints=C.shape[1],
             num_objectives=Yinit.shape[1],
             mode=mode,
-            outlier_threshold=outlier_treshold
+            outlier_threshold=outlier_threshold
         )
     )
 
