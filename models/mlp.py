@@ -194,7 +194,7 @@ class MLP(tf.keras.Model):
         if self.mode == "o":
             return self.objectives_output(x)
 
-    def preprocess(self, x, y, yC, remove_outliers=True, nan_to_max=False):
+    def preprocess(self, x, y, yC=None, remove_outliers=True, nan_to_max=False):
         y = np.nan_to_num(y)
 
         # filter outliers
@@ -212,6 +212,9 @@ class MLP(tf.keras.Model):
             m = np.max(np.nan_to_num(y[mask]), axis=0)
             for c in range(y.shape[1]):
                 y[:, c] = np.nan_to_num(y[:, c], nan=3 * m[c])
+
+        if yC is None:
+            return x[mask], y[mask], yC
 
         return x[mask], y[mask], yC[mask]
 
@@ -289,7 +292,9 @@ class MLP(tf.keras.Model):
 
             X_train, X_val = x[train_index], x[val_index]
             y_train, y_val = y[train_index], y[val_index]
-            yC_train, yC_val = yC[train_index], yC[val_index]
+            yC_train, yC_val = None, None
+            if yC is not None:
+                yC_train, yC_val = yC[train_index], yC[val_index]
 
             total_epochs = 0
             while total_epochs < timeout_epochs:

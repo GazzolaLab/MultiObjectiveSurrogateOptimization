@@ -26,7 +26,9 @@ def mlp(
 ):
     x = Xinit.copy()
     y = Yinit.copy()
-    yC = (C > 0).astype(int)
+    yC = None
+    if C is not None:
+        yC = (C > 0).astype(int)
 
     class Model:
         def __init__(self, model) -> None:
@@ -52,7 +54,7 @@ def mlp(
     model = Model(
         MLP(
             num_parameters=Xinit.shape[1],
-            num_constraints=C.shape[1],
+            num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
             mode=mode,
             outlier_threshold=outlier_threshold
