@@ -234,6 +234,20 @@ class Dmosopt(Component):
 
             return payload
 
+    def on_before_commit(self):
+        # pre-flight callable check
+        params = to_dict(self.config.dopt_params)
+        for f in [
+            "feature_dtypes",
+            "objective_names",
+            "constraint_names",
+            "metadata",
+        ]:
+            if f in params and isinstance(params[f], str):
+                fi = config.import_object_by_path(params[f])
+                if callable(fi):
+                    fi = fi(self)
+
     def __call__(self) -> None:
         params = to_dict(self.config.dopt_params)
         if "file_path" not in params:
