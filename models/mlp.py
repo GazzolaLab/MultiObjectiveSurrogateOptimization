@@ -199,7 +199,7 @@ class MLP(tf.keras.Model):
 
         # filter outliers
         mask = slice(None)
-        if remove_outliers:
+        if remove_outliers and self.outlier_threshold > 0:
             ylog = np.log(y + 1)
             ylmean = np.mean(ylog, axis=0)
             ylstd = np.std(ylog, axis=0)
