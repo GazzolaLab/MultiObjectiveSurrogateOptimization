@@ -16,7 +16,7 @@ class Modeling(Sopt):
                 "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes",
                 "optimizer_name": "nsga2",
                 "initial_method": "slh",
-                "n_initial": 800,
+                "n_initial": 100,
                 "initial_maxiter": 10,
                 "n_epochs": 10,
                 "population_size": 400,
@@ -28,7 +28,7 @@ class Modeling(Sopt):
                 "feasibility_method_name": None,
                 "feasibility_method_kwargs": {},
                 "save": True,
-                "save_surrogate_evals": False,
+                "save_surrogate_evals": True,
             }
         )
         nodes: str = "20"
