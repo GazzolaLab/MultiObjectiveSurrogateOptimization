@@ -15,6 +15,7 @@ import inspect
 import h5py
 from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
+from models.utils import epsilon_get_best
 from dmosopt import indicators
 import matplotlib.pyplot as plt
 import numpy as np
@@ -321,7 +322,7 @@ class Dmosopt(Component):
 
     def on_write_meta_data(self):
         return MPI.COMM_WORLD.Get_rank() == 0
-    
+
     def on_commit(self):
         if MPI.COMM_WORLD.Get_rank() > 0:
             return False
@@ -548,6 +549,7 @@ class Dmosopt(Component):
         region: list | tuple | None = None,
         sort_by: str = "-np.std(y, axis=1)",
         as_dataframes: bool = True,
+        epsilon=None,
     ):
         data = self.load_h5()
 
@@ -570,9 +572,15 @@ class Dmosopt(Component):
         else:
             f = None
         objectives = data["objectives"].to_numpy()[region]
-        best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
-            X, objectives, f, C, None, None
-        )
+        if epsilon is not None:
+            best_x, best_y, best_f, best_c, eps = epsilon_get_best(
+                X, objectives, f, C, epsilons=epsilon
+            )
+        else:
+            # strict non-dominated sort
+            best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
+                X, objectives, f, C, None, None
+            )
 
         if isinstance(sort_by, str):
             context = {
@@ -586,7 +594,7 @@ class Dmosopt(Component):
             exec(f"reduced={sort_by}", context)
             sort_by = np.argsort(context["reduced"])
 
-        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
+        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c}
 
         # apply sort
         if sort_by is not None:
@@ -615,7 +623,7 @@ class Dmosopt(Component):
             return pf.get_best()["y"].to_numpy()
         else:
             return np.array(pf)
-        
+
     def norm_front(self, pf, min_max=None):
         pf = self.front(pf)
 
@@ -623,7 +631,7 @@ class Dmosopt(Component):
             fmin, fmax = np.min(pf, axis=0), np.max(pf, axis=1)
         else:
             fmin, fmax = np.array(min_max[0]), np.array(min_max[1])
-            
+
         return (pf - fmin) / (fmax - fmin)
 
     def igd(self, ref_front, pf=None):

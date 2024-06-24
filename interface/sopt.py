@@ -158,13 +158,15 @@ class Sopt(Dmosopt):
         return _Wrapper(name, self.xlb, self.xub)
 
     def label(self):
+        m = self.config.dopt_params.opt_id.replace('dmosopt_', '') + "::" + self.m
+
         if self.config.dopt_params.get("surrogate_custom_training", None) is None:
-            return self.m
+            return m
         
         fs = self.custom_training_kwargs.get('feasibility_solving', False)
         fs = 'fs' if fs else '-'
         
-        return self.m + "[" + fs + "]"
+        return m + "[" + fs + "]"
 
     def version_joint_model(
         self,
