@@ -13,7 +13,6 @@ import os
 import sys
 import inspect
 import h5py
-from dmosopt.dmosopt import init_from_h5
 from dmosopt.MOASMO import get_best
 from models.utils import epsilon_get_best
 from dmosopt import indicators
@@ -549,7 +548,7 @@ class Dmosopt(Component):
         region: list | tuple | None = None,
         sort_by: str = "-np.std(y, axis=1)",
         as_dataframes: bool = True,
-        epsilon=None,
+        epsilon="auto",
     ):
         data = self.load_h5()
 
@@ -562,37 +561,45 @@ class Dmosopt(Component):
         else:
             region = slice(*region)
 
-        X = data["parameters"].to_numpy()[region]
+        objectives = data["objectives"].to_numpy()[region]
+
+        valid = np.logical_not(np.any(np.isnan(objectives), axis=1))
+
+        y = objectives[valid]
+        x = data["parameters"].to_numpy()[region][valid]
         if data["constraints"] is not None:
-            C = data["constraints"].to_numpy()[region]
+            C = data["constraints"].to_numpy()[region][valid]
         else:
             C = None
         if data["features"] is not None:
-            f = data["features"].to_numpy()[region]
+            f = data["features"].to_numpy()[region][valid]
         else:
             f = None
-        objectives = data["objectives"].to_numpy()[region]
+
         if epsilon is not None:
             best_x, best_y, best_f, best_c, eps = epsilon_get_best(
-                X, objectives, f, C, epsilons=epsilon
+                x, y, f, C, epsilons=epsilon
             )
         else:
             # strict non-dominated sort
             best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
-                X, objectives, f, C, None, None
+                x, y, f, C, None, None
             )
 
         if isinstance(sort_by, str):
-            context = {
-                "reduced": None,
-                "x": best_x,
-                "y": best_y,
-                "f": best_f,
-                "c": best_c,
-                "np": np,
-            }
-            exec(f"reduced={sort_by}", context)
-            sort_by = np.argsort(context["reduced"])
+            if len(best_x) > 0:
+                context = {
+                    "reduced": None,
+                    "x": best_x,
+                    "y": best_y,
+                    "f": best_f,
+                    "c": best_c,
+                    "np": np,
+                }
+                exec(f"reduced={sort_by}", context)
+                sort_by = np.argsort(context["reduced"])
+            else:
+                sort_by = None
 
         best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c}
 

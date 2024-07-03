@@ -118,6 +118,9 @@ def epsilon_get_best(
         # 5% of IQR
         epsilons = 0.05 * stats.iqr(y, axis=0)
 
+    if y.shape[0] == 0:
+        return x, y, f, c, epsilons
+
     sorter = EpsilonSort(epsilons)
 
     for i in range(y.shape[0]):
@@ -175,7 +178,7 @@ class EpsilonSort:
         self.archive = []  # objectives
         self.tagalongs = []  # tag-along data
         self.boxes = []  # remember for efficiency
-        self.epsilons = epsilons
+        self.epsilons = [e if e != 0 and not np.isnan(e) else 1e-8 for e in epsilons]
         self.itobj = range(len(epsilons))  # infer number of objectives
 
     def add(self, objectives, tagalong, ebox):
@@ -210,7 +213,7 @@ class EpsilonSort:
         #           jump ahead to the comparison with the next archive member).
         # return:   The candidate solution is dominated, stop comparing it to
         #           the archive, don't add it, immediately exit the method.
-
+        objectives = np.nan_to_num(objectives)
         ebox = [math.floor(objectives[ii] / self.epsilons[ii]) for ii in self.itobj]
 
         asize = len(self.archive)
