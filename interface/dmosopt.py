@@ -576,7 +576,7 @@ class Dmosopt(Component):
         else:
             f = None
 
-        if epsilon is not None:
+        if epsilon is not None or len(x) == 0:
             best_x, best_y, best_f, best_c, eps = epsilon_get_best(
                 x, y, f, C, epsilons=epsilon
             )
