@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from sklearn.model_selection import KFold
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -27,6 +27,12 @@ def apply_bounds(tensor, bounds):
             for i in range(len(bounds))
         ],
         axis=1,
+    )
+
+
+def acc(y_true, y_pred):
+    return tf.reduce_mean(
+        tf.cast(tf.cast(y_pred > 0.5, dtype=tf.float32) == y_true, dtype=tf.float32)
     )
 
 
@@ -72,7 +78,7 @@ class MLP(tf.keras.Model):
         self.num_constraints = num_constraints
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
-        self.outlier_threshold=outlier_threshold
+        self.outlier_threshold = outlier_threshold
         if mode not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
         self.mode = mode
@@ -124,11 +130,11 @@ class MLP(tf.keras.Model):
             }
             metrics = {
                 "objectives": ["mae"],
-                "constraints": ["acc"],
+                "constraints": [acc],
             }
         elif self.mode == "c":
             loss = "binary_crossentropy"
-            metrics = "acc"
+            metrics = acc
         elif self.mode == "o":
             loss = tf.keras.losses.Huber()
             metrics = "mae"
@@ -161,7 +167,7 @@ class MLP(tf.keras.Model):
         self._last_fit_epochs = -1
 
     def label(self):
-        return 'joint-' + self.mode
+        return "joint-" + self.mode
 
     def new(self):
         return self.__class__(
@@ -272,7 +278,7 @@ class MLP(tf.keras.Model):
 
         x, y, yC = self.preprocess(x, y, yC)
 
-        kf = KFold(n_splits=n_splits, shuffle=True)
+        kf = TimeSeriesSplit(n_splits=n_splits)
         stopped_after_epochs = []
         timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 2500))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
@@ -328,11 +334,7 @@ class MLP(tf.keras.Model):
                             mode="min",
                         )
                         for mon in (
-                            [
-                                # prioritize objective as it is most crucial for
-                                #  the overall optimization outcome
-                                "val_objectives_loss",  # "val_constraints_loss"
-                            ]
+                            ["val_objectives_loss", "val_constraints_loss"]
                             if self.mode == "c+o"
                             else ["val_loss"]
                         )
@@ -484,8 +486,8 @@ class MLP(tf.keras.Model):
 
     def predict_objectives(self, X, nan_to_num=True, max_zero=True, verbose=0):
         yR = self.predict(X, verbose=verbose)
-        
-        if self.mode == 'c+o':
+
+        if self.mode == "c+o":
             yR = yR["objectives"]
 
         if nan_to_num:
