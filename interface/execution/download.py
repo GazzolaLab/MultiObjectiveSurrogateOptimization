@@ -21,6 +21,8 @@ class StorageDownload(Execution):
         table = Table(title=f"Retrieving from {storage}")
         table.add_column("Component", style="cyan", no_wrap=True)
         table.add_column("Status", style="blue")
+        table.add_column("Label")
+        table.add_column("Directory")
 
         def pb(b):
             return " ⬇️ " if b else "❔"
@@ -46,6 +48,8 @@ class StorageDownload(Execution):
             table.add_row(
                 pb(len(found) > 0) + " " + repr(executable),
                 status,
+                executable.label(),
+                executable.local_directory(),
             )
 
         console = Console()
