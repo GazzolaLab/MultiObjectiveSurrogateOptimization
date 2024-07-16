@@ -10,3 +10,6 @@ scikit-learn
 livelossplot
 pysqlite3-binary
 rich
+uncertainties
+nds @ git+https://github.com/KernelA/nds-py.git
+globus_sdk
