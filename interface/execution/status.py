@@ -18,12 +18,10 @@ class Status(Execution):
         table = Table(title=f"Status summary ({c - cp} out of {c} cached)")
 
         table.add_column("Component", style="cyan", no_wrap=True)
-        table.add_column("Status", style="blue")
+        table.add_column("Execution", style="blue")
+        table.add_column("Label")
         table.add_column("Job ID")
         table.add_column("Logs")
-
-        def pb(b):
-            return "✅" if b else "❌"
 
         for executable in self.executables:
             execution = executable.execution
@@ -37,10 +35,24 @@ class Status(Execution):
                 status = "COMMITTED"
             else:
                 status = ""
-
+            label = ""
+            if hasattr(executable, 'label'):
+                label = executable.label()
+            label += " " + executable.load_attribute('label', '')
+            # if hasattr(executable, 'load_h5'):
+            #     try:
+            #         label = str(len(executable.load_h5()['epochs']))
+            #         label += " / "
+            #         label += str(executable.num_evals_total)
+            #     except:
+            #         pass
+            state = "🆕" if not executable.is_committed() else "❌"
+            if executable.cached(): 
+                state = "✅" 
             table.add_row(
-                pb(executable.cached()) + " " + repr(executable),
+                state + " " + repr(executable).replace('interface.', ''),
                 status,
+                label,
                 str(
                     executable.execution.load_file(
                         [executable.id, "slurm.json"], {}
