@@ -89,7 +89,9 @@ class Modeling(Sopt):
                     "protocol_config_dict": protocol_config_dict,
                     "template_name": template_name,
                     "template_path": template_path,
-                    "mechanisms": compile(mechanisms_path, recursive=False),
+                    "mechanisms": os.path.relpath(
+                        compile(mechanisms_path, recursive=False)
+                    ),
                     "target_namespace": target_namespace,
                 },
                 "objective_names": [
