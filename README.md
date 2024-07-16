@@ -102,14 +102,19 @@ ma <index/storage module> <execution module> <interface> --launch
 "dopt_params": {
     "dynamic_initial_sampling": "models.ops.dynamic_sampling",
     "dynamic_initial_sampling_kwargs": {
-        "max_iterations": 10,
-        # Number of maximum iterations
-        "stop_condition": "f1>0.4",
-        # Condition at which sampling stops early
-        "feasibility_solving": False,
+        "samples_per_iteration": 25,
+        # Samples to evaluate per iteration
+        "max_samples": 500,
+        # Number of maximum samples
+        "stop_condition": "convergence_condition and feasible_ratio > 0.1",
+        # Stop condition, e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+        "convergence_condition": "iteration > 3 and max(recent('ecov', 3)) < 0.1",
+        # Condition to determine model reliability
+        "optimizer_sampling": 0.2,
+        # Fraction of samples to draw using optimizer cross-over
+        "feasibility_solving": True,
         # If True, the gradient information of the model will be used to push samples
-        #  towards feasibility. This can be activated conditionally using a string,
-        #  e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+        #  towards feasibility. 
         "feasibility_max_iterations": 50,
         # Only applies if feasibility_solving is True; number of iterations
         "feasibility_use_joint_loss": True,

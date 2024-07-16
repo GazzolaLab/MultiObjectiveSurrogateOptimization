@@ -3,6 +3,9 @@ compiled/
 storage/
 *.sqlite
 *.h5
+*.png
+*.svg
+*.jpg
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
