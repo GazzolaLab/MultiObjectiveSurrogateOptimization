@@ -2,6 +2,7 @@ from models.mlp import MLP
 import numpy as np
 from machinable.utils import save_file
 import os
+import dmosopt.MOASMO as opt
 
 
 def mlp(
@@ -14,11 +15,11 @@ def mlp(
     file_path,
     options,
     # -
-    mode='c+o',
+    mode="c+o",
     objectives=True,
     constraints=False,
     sensitivity=False,
-    outlier_threshold=3.,
+    outlier_threshold=3.0,
     feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
@@ -57,7 +58,7 @@ def mlp(
             num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
             mode=mode,
-            outlier_threshold=outlier_threshold
+            outlier_threshold=outlier_threshold,
         )
     )
 
@@ -128,14 +129,21 @@ def dynamic_sampling(
     evaluated_samples,
     next_samples,
     sampler,
-    max_iterations=10,
-    stop_condition="f1>0.4",
+    # ---
+    samples_per_iteration=25,
+    max_samples=500,
+    stop_condition="convergence_condition",
+    convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)",
+    optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
+    # ---
+    _history=[],
 ):
-    if iteration >= max_iterations:
+    if len(evaluated_samples) >= max_samples:
+        # time-out
         return
 
     if len(evaluated_samples) == 0:
@@ -148,43 +156,109 @@ def dynamic_sampling(
     y_completed = np.vstack([x.objectives for x in evaluated_samples])
     c_completed = np.vstack([x.constraints for x in evaluated_samples])
 
+    c_completed = (c_completed > 0).astype(int)
+    feasible = c_completed.all(axis=1)
+
     model = MLP(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
-        joint=True,
     )
+
+    autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=1)
 
     model.autofit(
         x_completed,
         y_completed,
         c_completed,
         verbose=1,
-        epochs=model.autoepoch(x_completed, y_completed, c_completed, verbose=1),
+        epochs=np.mean(autoepochs),
     )
 
-    # continue sampling?
-
+    # gather stats
     scores = model.autoeval(x_completed, y_completed, c_completed)
 
+    scores["global_feasible_ratio"] = np.mean(feasible)
+    scores["feasible_ratio"] = np.mean(feasible[-samples_per_iteration:])
+    scores["ecov"] = np.std(autoepochs) / np.mean(autoepochs)
+    scores["autoepochs"] = autoepochs
+    scores["num_samples"] = x_completed.shape[0]
     scores["iteration"] = iteration
 
-    if eval(stop_condition, scores.copy()):
+    _history.append(scores)
+
+    def h(key, horizon):
+        return [s[key] for s in _history[-horizon:]]
+
+    utilities = {"recent": h, "history": _history}
+
+    scores["convergence_condition"] = is_converged = False
+    if len(_history) > 0 and _history[-1]["convergence_condition"] is True:
+        scores["convergence_condition"] = is_converged = True
+    elif isinstance(convergence_condition, str) and eval(
+        convergence_condition, scores.copy(), utilities.copy()
+    ):
+        scores["convergence_condition"] = is_converged = True
+
+    # save meta-data
+    save_file([os.path.dirname(file_path), "dynamic_sampling.jsonl"], scores, mode="a")
+
+    # continue sampling?
+    if isinstance(stop_condition, str) and eval(
+        stop_condition, scores.copy(), utilities.copy()
+    ):
         return
 
     # generate next samples
-    if isinstance(feasibility_solving, str):
-        feasibility_solving = scores["feasibility_solving"] = bool(
-            eval(feasibility_solving, scores.copy())
+    candidate_samples = []
+
+    if optimizer_sampling is not None:
+        # include optimizer suggested samples
+        from dmosopt.NSGA2 import NSGA2
+        from dmosopt.model import Model
+
+        optimizer = NSGA2(
+            popsize=_history[0]["num_samples"] // x_completed.shape[1],
+            nInput=x_completed.shape[1],
+            nOutput=y_completed.shape[1],
+            model=Model(),
+            distance_metric=None,
         )
+        local_random = np.random.default_rng()
+        bounds = np.column_stack((sampler["xlb"], sampler["xub"]))
+        optimizer.initialize_strategy(x_completed, y_completed, bounds, local_random)
+        x_gen, _ = optimizer.generate()
 
-    save_file([os.path.dirname(file_path), "dynamic_sampling.jsonl"], scores, mode="a")
+        # overwrite percentage of random samples with optimizer generated samples
+        k = round(samples_per_iteration * float(optimizer_sampling))
+        for i, x_opt in enumerate(x_gen):
+            if i > k:
+                break
+            candidate_samples.append(x_opt)
 
-    if not feasibility_solving:
-        return next_samples
+    if (draw := samples_per_iteration - len(candidate_samples)) > 0:
+        new_samples = opt.xinit(
+            samples_per_iteration,
+            sampler["param_names"],
+            sampler["xlb"],
+            sampler["xub"],
+            nPrevious=None,
+            maxiter=sampler["maxiter"],
+            method=sampler["method"],
+        )
+        for i in np.random.choice(
+            np.arange(len(new_samples)), size=draw, replace=False
+        ):
+            candidate_samples.append(new_samples[i])
+    assert len(candidate_samples) == samples_per_iteration, len(candidate_samples)
+    candidate_samples = np.array(candidate_samples)
 
+    if not is_converged or feasibility_solving is False:
+        return candidate_samples
+
+    # feasibiliy solving
     x_transformed, _ = model.make_feasible(
-        next_samples,
+        candidate_samples,
         learning_rate=0.1,
         transform=[(l, u) for l, u in zip(sampler["xlb"], sampler["xub"])],
         max_iterations=feasibility_max_iterations,

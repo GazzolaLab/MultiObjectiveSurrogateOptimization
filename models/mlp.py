@@ -235,7 +235,10 @@ class MLP(tf.keras.Model):
         **kwargs,
     ):
         if epochs == "auto":
-            epochs = self.autoepoch(x, y, yC, verbose=0)
+            m = self.autoepoch(x, y, yC, verbose=0)
+            epochs = np.mean(m)
+
+        epochs = int(epochs)
 
         x, y, yC = self.preprocess(x, y, yC)
 
@@ -353,13 +356,9 @@ class MLP(tf.keras.Model):
             p(f"Stopped after {total_epochs} for split {s}")
             stopped_after_epochs.append(total_epochs)
 
-        m = max(stopped_after_epochs)
-
         self.set_weights(initial_weights)
 
-        p(f"Max epochs: {m} for {stopped_after_epochs}")
-
-        return int(m)
+        return stopped_after_epochs
 
     def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
         # normalize inputs
