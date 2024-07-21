@@ -3,7 +3,7 @@ import numpy as np
 from machinable.utils import save_file
 import os
 import dmosopt.MOASMO as opt
-
+import tensorflow as tf
 
 def mlp(
     optimizer_cls,
@@ -43,10 +43,28 @@ def mlp(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            # TODO: self.sensitivity()
+            def _reduction(s):
+                a = tf.abs(s)
+                n = a / tf.reduce_max(a, axis=0)
+                return tf.reduce_mean(n, axis=0)
+            sens = self.sensitivity(x, _reduction)
+            if isinstance(sens, dict):
+                # disregard constraint gradients
+                sens = sens['objectives']
+            
+            # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations 
+            # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
+            di_crossover = 5 + (sens * 25)
+            di_mutation = 5 + (sens * 45)
+            
+            if sensitivity == 'cross_check':
+                # invert values to cross-check effect of sensitivity
+                di_crossover = 30 - (sens * 25)
+                di_mutation = 50 - (sens * 45)
+            
             return {
-                "di_mutation": None,
-                "di_crossover": None,
+                "di_mutation": di_mutation,
+                "di_crossover": di_crossover,
             }
 
         def __getattr__(self, name):
