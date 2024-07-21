@@ -32,7 +32,7 @@ def apply_bounds(tensor, bounds):
 
 def acc(y_true, y_pred):
     return tf.reduce_mean(
-        tf.cast(tf.cast(y_pred > 0.5, dtype=tf.float32) == y_true, dtype=tf.float32)
+        tf.cast(tf.cast(y_pred > 0.5, dtype=tf.int64) == y_true, dtype=tf.float32)
     )
 
 
@@ -137,7 +137,7 @@ class MLP(tf.keras.Model):
             metrics = acc
         elif self.mode == "o":
             loss = tf.keras.losses.Huber()
-            metrics = "mae"
+            metrics = ["mae"]
 
         self.compile(
             optimizer=tf.keras.optimizers.Adam(
@@ -181,7 +181,7 @@ class MLP(tf.keras.Model):
             self.xub,
         )
 
-    def build_(self, input_shape):
+    def build(self, input_shape):
         self.call(tf.ones([1, input_shape[-1]]))
 
     def call(self, inputs):

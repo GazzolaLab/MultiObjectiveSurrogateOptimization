@@ -62,7 +62,7 @@ def mlp(
         )
     )
 
-    model.autofit(x, y, yC, verbose=0, epochs=model.autoepoch(x, y, yC, verbose=0))
+    model.autofit(x, y, yC, verbose=0, epochs=np.mean(model.autoepoch(x, y, yC, verbose=0)))
 
     scores = model.autoeval(x, y, yC)
 
