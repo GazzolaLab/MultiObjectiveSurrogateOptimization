@@ -13,11 +13,27 @@ from scipy.stats import spearmanr
 from keras.layers import LeakyReLU
 
 
+huber_loss = tf.keras.losses.Huber()
+
+
 def mase_loss(y_true, y_pred):
     # https://en.wikipedia.org/wiki/Mean_absolute_scaled_error
     mae = tf.reduce_mean(tf.abs(y_true - y_pred))
     mad = tf.reduce_mean(tf.abs(y_true - tf.reduce_mean(y_pred)))
     return mae / (mad + 1e-7)
+
+
+def logscaled_huber(y_true, y_pred):
+    return huber_loss(tf.math.log1p(y_true), tf.math.log1p(y_pred))
+    
+
+def sqrtscaled_huber(y_true, y_pred):
+    return huber_loss(tf.sqrt(y_true + 1e-9), tf.sqrt(y_pred + 1e-9))
+    
+
+def logscaled_mse(y_true, y_pred):
+    return tf.reduce_mean(tf.square(tf.math.log1p(y_true) - tf.math.log1p(y_pred)))
+
 
 
 def apply_bounds(tensor, bounds):
@@ -67,7 +83,7 @@ class MLP(tf.keras.Model):
         num_objectives,
         mode="c+o",
         learning_rate=0.1,
-        outlier_threshold=2,
+        outlier_threshold=0,
         multihead=False,
         xlb=None,
         xub=None,
@@ -123,9 +139,11 @@ class MLP(tf.keras.Model):
             num_constraints, activation="sigmoid", name="constraints"
         )
 
+        objective_loss = logscaled_huber
+        
         if self.mode == "c+o":
             loss = {
-                "objectives": tf.keras.losses.Huber(),
+                "objectives": objective_loss,
                 "constraints": "binary_crossentropy",
             }
             metrics = {
@@ -136,7 +154,7 @@ class MLP(tf.keras.Model):
             loss = "binary_crossentropy"
             metrics = acc
         elif self.mode == "o":
-            loss = tf.keras.losses.Huber()
+            loss = objective_loss
             metrics = ["mae"]
 
         self.compile(
@@ -200,8 +218,11 @@ class MLP(tf.keras.Model):
         if self.mode == "o":
             return self.objectives_output(x)
 
-    def preprocess(self, x, y, yC=None, remove_outliers=True, nan_to_max=False):
-        y = np.nan_to_num(y)
+    def preprocess(self, x, y, yC=None, remove_outliers=True):
+        # replace NaNs with maximum
+        m = np.max(np.nan_to_num(y), axis=0)
+        for c in range(y.shape[1]):
+            y[:, c] = np.nan_to_num(y[:, c], nan=max(m[c], 1e5))
 
         # filter outliers
         mask = slice(None)
@@ -212,12 +233,6 @@ class MLP(tf.keras.Model):
             zscores = (ylog - ylmean) / ylstd
             outlier = np.any(np.abs(zscores) > self.outlier_threshold, axis=1)
             mask = ~outlier
-
-        # replace NaNs with 3*maximum (disregarding outliers)
-        if nan_to_max:
-            m = np.max(np.nan_to_num(y[mask]), axis=0)
-            for c in range(y.shape[1]):
-                y[:, c] = np.nan_to_num(y[:, c], nan=3 * m[c])
 
         if yC is None:
             return x[mask], y[mask], yC
