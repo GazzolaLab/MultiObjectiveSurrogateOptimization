@@ -199,7 +199,7 @@ class MLP(tf.keras.Model):
             self.xub,
         )
 
-    def build(self, input_shape):
+    def build_(self, input_shape):
         self.call(tf.ones([1, input_shape[-1]]))
 
     def call(self, inputs):
