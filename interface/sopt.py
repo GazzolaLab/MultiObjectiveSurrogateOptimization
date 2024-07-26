@@ -136,11 +136,6 @@ class Sopt(Dmosopt):
                 y_pred = self.model.evaluate(x)
 
                 return {
-                    "epochs": 1.0,
-                    "accuracy": 0.0,
-                    "precision": 0.0,
-                    "recall": 0.0,
-                    "f1": 0.0,
                     "mdae": float(
                         median_absolute_error(
                             y,
@@ -183,23 +178,11 @@ class Sopt(Dmosopt):
 
     def version_dynamic_sampling(
         self,
-        max_iterations=10,
-        stop_condition="f1>0.4",
-        feasibility_solving=False,
-        feasibility_max_iterations=50,
-        feasibility_use_joint_loss=True,
-        feasibility_max_steps_filter=True,
+        **kwargs
     ):
         return {
             "dopt_params": {
                 "dynamic_initial_sampling": "models.ops.dynamic_sampling",
-                "dynamic_initial_sampling_kwargs": {
-                    "max_iterations": max_iterations,
-                    "stop_condition": stop_condition,
-                    "feasibility_solving": feasibility_solving,
-                    "feasibility_max_iterations": feasibility_max_iterations,
-                    "feasibility_use_joint_loss": feasibility_use_joint_loss,
-                    "feasibility_max_steps_filter": feasibility_max_steps_filter,
-                },
+                "dynamic_initial_sampling_kwargs": kwargs,
             }
         }
