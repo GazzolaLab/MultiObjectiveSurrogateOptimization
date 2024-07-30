@@ -303,6 +303,7 @@ class Modeling(Sopt):
         coreneuron=False,
         stim_amp=0.08,
         passive_features=False,
+        param_dict=None,
     ):
         import matplotlib.pyplot as plt
         from neuron import h
@@ -475,9 +476,13 @@ class Modeling(Sopt):
         # if param_dict is None:
         #     param_dict = toplevel_param_dict[int(param_key)]
 
-        best = self.get_best(sort_by="-np.max(y, axis=1)", epsilon="auto")
-
-        param_dict = best["x"].iloc[-1].to_dict()
+        if param_dict is None:
+            best = self.get_best(sort_by="-np.max(y, axis=1)", epsilon="auto")
+            param_dict = best["x"].iloc[-1].to_dict()
+            feature_dict = best["f"].iloc[-1].to_dict()
+            param_dict.update({ k: feature_dict[k]
+                                for k in ['ic_constant_hold', 'ic_constant_rest'] })
+            
         param_dict.update(self.config.dopt_params.problem_parameters)
 
         logger.info(f"{pprint.pformat(param_dict)}")
@@ -519,9 +524,9 @@ class Modeling(Sopt):
             ic_constant_val = x0 + ic_constant_0
         else:
             if v_init_config == "rest":
-                ic_constant_val = best["f"].iloc[-1]["ic_constant_rest"]
+                ic_constant_val = param_dict["ic_constant_rest"]
             elif v_init_config == "hold":
-                ic_constant_val = best["f"].iloc[-1]["ic_constant_hold"]
+                ic_constant_val = param_dict["ic_constant_hold"]
             else:
                 raise RuntimeError(f"Unknown v_init configuration {v_init}")
 
@@ -643,7 +648,7 @@ class Modeling(Sopt):
 
         nrows = 6
         ncols = 3
-        fig, axs = plt.subplots(nrows, ncols)
+        fig, axs = plt.subplots(nrows, ncols, figsize=(15,8))
         axs[0, 0].plot(vec_t, vec_soma_v, linewidth=3, color="r", label="soma_v")
         axs[1, 0].plot(vec_t, vec_dend_v, linewidth=3, color="r", label="dend_v")
         axs[2, 0].plot(vec_t, vec_soma_ina, linewidth=3, color="b", label="soma_ina")
