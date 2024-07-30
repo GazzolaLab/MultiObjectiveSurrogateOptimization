@@ -822,6 +822,30 @@ class Dmosopt(Component):
     def xlb(self) -> list[Number]:
         return [v[0] for v in self.space.values()]
 
+    def epoch_ranges(self, inferred=True, from_zero=False):
+        if not inferred:
+            return [
+                (0, self.num_initial_samples),
+            ] + [
+                (
+                    (
+                        (self.num_initial_samples + (self.num_evals_per_epoch * e))
+                        if not from_zero
+                        else 0
+                    ),
+                    self.num_initial_samples + (self.num_evals_per_epoch * (e + 1)),
+                )
+                for e in range(self.n_epochs - 1)
+            ]
+
+        epoch_array = self.load_h5()["epochs"]
+        change_indices = np.where(np.diff(epoch_array) != 0)[0] + 1
+        all_indices = np.concatenate(([0], change_indices, [len(epoch_array)]))
+        return [
+            (all_indices[i] if not from_zero else 0, all_indices[i + 1])
+            for i in range(len(all_indices) - 1)
+        ]
+
     def estimate_run_time(self, eval_seconds, surrogate_eval_seconds=None):
         seconds = self.num_evals_total * eval_seconds
         if surrogate_eval_seconds is not None:
