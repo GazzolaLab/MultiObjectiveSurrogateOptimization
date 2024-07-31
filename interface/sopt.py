@@ -101,17 +101,22 @@ class Sopt(Dmosopt):
                 zscores = (ylog - ylmean) / ylstd
                 outlier = np.any(np.abs(zscores) > 2, axis=1)
 
+                if yC is None:
+                    return x[~outlier], y[~outlier], yC
+            
                 return x[~outlier], y[~outlier], yC[~outlier]
 
             def autofit(self, x, y, yC, *args, **kwargs):
                 x, y, yC = self.preprocess(x, y, yC)
 
-                feasible = np.argwhere(np.all(yC > 0.0, axis=1))
-                if len(feasible) > 0:
-                    feasible = feasible.ravel()
-                    x = x[feasible, :]
-                    y = y[feasible, :]
-                    yC = yC[feasible, :]
+                if yC is not None:
+                    feasible = np.argwhere(np.all(yC > 0.0, axis=1))
+                    if len(feasible) > 0:
+                        feasible = feasible.ravel()
+                        x = x[feasible, :]
+                        y = y[feasible, :]
+                        yC = yC[feasible, :]
+                
                 from dmosopt import MOEA
 
                 x, y = MOEA.remove_duplicates(x, y)
@@ -151,6 +156,9 @@ class Sopt(Dmosopt):
                         )
                     ),
                 }
+                
+            def predict(self, x):
+                return self.model.evaluate(x)
 
         return _Wrapper(name, self.xlb, self.xub)
 
