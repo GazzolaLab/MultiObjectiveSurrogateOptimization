@@ -25,15 +25,14 @@ def mase_loss(y_true, y_pred):
 
 def logscaled_huber(y_true, y_pred):
     return huber_loss(tf.math.log1p(y_true), tf.math.log1p(y_pred))
-    
+
 
 def sqrtscaled_huber(y_true, y_pred):
     return huber_loss(tf.sqrt(y_true + 1e-9), tf.sqrt(y_pred + 1e-9))
-    
+
 
 def logscaled_mse(y_true, y_pred):
     return tf.reduce_mean(tf.square(tf.math.log1p(y_true) - tf.math.log1p(y_pred)))
-
 
 
 def apply_bounds(tensor, bounds):
@@ -84,6 +83,7 @@ class MLP(tf.keras.Model):
         mode="c+o",
         learning_rate=0.1,
         outlier_threshold=0,
+        exclude_infeasible=False,
         multihead=False,
         xlb=None,
         xub=None,
@@ -95,6 +95,7 @@ class MLP(tf.keras.Model):
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
         self.outlier_threshold = outlier_threshold
+        self.exclude_infeasible = exclude_infeasible
         if mode not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
         self.mode = mode
@@ -140,7 +141,7 @@ class MLP(tf.keras.Model):
         )
 
         objective_loss = logscaled_huber
-        
+
         if self.mode == "c+o":
             loss = {
                 "objectives": objective_loss,
@@ -218,11 +219,20 @@ class MLP(tf.keras.Model):
         if self.mode == "o":
             return self.objectives_output(x)
 
-    def preprocess(self, x, y, yC=None, remove_outliers=True):
-        # replace NaNs with maximum
-        m = np.max(np.nan_to_num(y), axis=0)
-        for c in range(y.shape[1]):
-            y[:, c] = np.nan_to_num(y[:, c], nan=max(m[c], 1e5))
+    def preprocess(self, x, y, yC=None, remove_outliers=False, nan="remove"):
+        if nan == "max":
+            # replace NaNs with maximum
+            m = np.max(np.nan_to_num(y), axis=0)
+            for c in range(y.shape[1]):
+                y[:, c] = np.nan_to_num(y[:, c], nan=max(m[c], 1e5))
+        elif nan == "remove":
+            r = ~np.any(np.isnan(y), axis=1)
+            x = x[r]
+            y = y[r]
+            if yC is not None:
+                yC = yC[r]
+        else:
+            raise ValueError("Invalid nan mode")
 
         # filter outliers
         mask = slice(None)
@@ -256,6 +266,13 @@ class MLP(tf.keras.Model):
         epochs = int(epochs)
 
         x, y, yC = self.preprocess(x, y, yC)
+
+        if yC is not None and self.exclude_infeasible:
+            feasible = np.argwhere(np.all(yC > 0.0, axis=1))
+            if len(feasible) > 0:
+                feasible = feasible.ravel()
+                x = x[feasible, :]
+                y = y[feasible, :]
 
         if self.mode == "c+o":
             Y = {"objectives": y, "constraints": yC}
@@ -295,6 +312,13 @@ class MLP(tf.keras.Model):
             return 1
 
         x, y, yC = self.preprocess(x, y, yC)
+
+        if yC is not None and self.exclude_infeasible:
+            feasible = np.argwhere(np.all(yC > 0.0, axis=1))
+            if len(feasible) > 0:
+                feasible = feasible.ravel()
+                x = x[feasible, :]
+                y = y[feasible, :]
 
         kf = TimeSeriesSplit(n_splits=n_splits)
         stopped_after_epochs = []
