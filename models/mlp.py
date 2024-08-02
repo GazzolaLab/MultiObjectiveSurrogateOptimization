@@ -84,6 +84,7 @@ class MLP(tf.keras.Model):
         learning_rate=0.1,
         outlier_threshold=0,
         exclude_infeasible=False,
+        normalize_targets=True,
         multihead=False,
         xlb=None,
         xub=None,
@@ -96,6 +97,7 @@ class MLP(tf.keras.Model):
         self.learning_rate = learning_rate
         self.outlier_threshold = outlier_threshold
         self.exclude_infeasible = exclude_infeasible
+        self.normalize_targets = normalize_targets
         if mode not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
         self.mode = mode
@@ -112,26 +114,43 @@ class MLP(tf.keras.Model):
         #  in low-data regimes
         # -> https://github.com/keras-team/keras/issues/6447
         self.hidden = tf.keras.layers.Dense(
-            100,
+            32,
             activation=LeakyReLU(),
+            kernel_constraint=tf.keras.constraints.MaxNorm(3),
+            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+        )
+        self.hidden2 = tf.keras.layers.Dense(
+            32,
+            activation=LeakyReLU(),
+            kernel_constraint=tf.keras.constraints.MaxNorm(3),
+            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+        )
+        self.hidden3 = tf.keras.layers.Dense(
+            16,
+            activation=LeakyReLU(),
+            kernel_constraint=tf.keras.constraints.MaxNorm(3),
             kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
         )
         if multihead:
             self.heads = [
-                tf.keras.layers.Dense(
-                    1, activation="relu", name=f"regression_head_{head}"
-                )
+                [
+                    tf.keras.layers.Dense(
+                        8, activation=LeakyReLU(), name=f"regression_{head}_d1"
+                    ),
+                    tf.keras.layers.Dense(1, name=f"regression_{head}_out"),
+                ]
                 for head in range(self.num_objectives)
             ]
 
             def multihead_regression(x):
-                return tf.keras.layers.Concatenate()([head(x) for head in self.heads])
+                return tf.keras.layers.Concatenate()(
+                    [head[1](head[0](x)) for head in self.heads]
+                )
 
             self.objectives_output = multihead_regression
         else:
             self.objectives_output = tf.keras.layers.Dense(
                 num_objectives,
-                activation="relu",
                 name="objectives",
                 kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
             )
@@ -140,7 +159,7 @@ class MLP(tf.keras.Model):
             num_constraints, activation="sigmoid", name="constraints"
         )
 
-        objective_loss = logscaled_huber
+        objective_loss = huber_loss  # multi_output_neg_log_likelihood #logscaled_huber
 
         if self.mode == "c+o":
             loss = {
@@ -172,16 +191,16 @@ class MLP(tf.keras.Model):
             name="inverse_input",
         )
 
-        # self.min_yR = tf.Variable(
-        #     initial_value=np.zeros([num_objectives]),
-        #     dtype=tf.float32,
-        #     name="min_yR",
-        # )
-        # self.max_yR = tf.Variable(
-        #     initial_value=np.zeros([num_objectives]),
-        #     dtype=tf.float32,
-        #     name="max_yR",
-        # )
+        self.min_mean_yR = tf.Variable(
+            initial_value=np.zeros([num_objectives]),
+            dtype=tf.float32,
+            name="min_mean_yR",
+        )
+        self.max_std_yR = tf.Variable(
+            initial_value=np.zeros([num_objectives]),
+            dtype=tf.float32,
+            name="max_std_yR",
+        )
 
         self._last_fit_epochs = -1
 
@@ -206,6 +225,11 @@ class MLP(tf.keras.Model):
     def call(self, inputs):
         x = self.normalization_layer(inputs)
         x = self.hidden(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
+        x = self.hidden2(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
+        x = self.hidden3(x)
+        x = tf.keras.layers.Dropout(0.2)(x)
 
         if self.mode == "c+o":
             return {
@@ -409,7 +433,7 @@ class MLP(tf.keras.Model):
             return super().fit(
                 x,
                 {
-                    "objectives": y["objectives"],
+                    "objectives": self.norm_output(y["objectives"], adapt=True),
                     "constraints": y["constraints"],
                 },
                 *args,
@@ -417,21 +441,38 @@ class MLP(tf.keras.Model):
                 **kwargs,
             )
         else:
-            return super().fit(x, y, *args, epochs=epochs, **kwargs)
+            return super().fit(
+                x, self.norm_output(y, adapt=True), *args, epochs=epochs, **kwargs
+            )
 
-    def norm_output(self, yR, inverse=False, adapt=False):
+    def norm_output(self, yR, inverse=False, adapt=False, method="standard"):
+        if not self.normalize_targets:
+            return yR
+
         if adapt:
-            # mean_yR_train = np.mean(yR_train, axis=0)
-            # std_yR_train = np.std(yR_train, axis=0)
-            # yR_standardized = (yR_train - mean_yR_train) / std_yR_train
+            if method == "minmax":
+                self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
+                self.max_std_yR.assign(np.max(yR, axis=0))
+            elif method == "standard":
+                self.min_mean_yR.assign(np.mean(yR, axis=0))
+                self.max_std_yR.assign(np.std(yR, axis=0))
 
-            self.min_yR.assign(np.min(yR, axis=0))
-            self.max_yR.assign(np.max(yR, axis=0))
-
-        if inverse:
-            return yR * (self.max_yR - self.min_yR) + self.min_yR
+        if method == "minmax":
+            if inverse:
+                return (yR + 0.5) * (
+                    self.max_std_yR - self.min_mean_yR
+                ) + self.min_mean_yR
+            else:
+                return (
+                    (yR - self.min_mean_yR) / (self.max_std_yR - self.min_mean_yR)
+                ) - 0.5
+        elif method == "standard":
+            if inverse:
+                return yR * self.max_std_yR + self.min_mean_yR
+            else:
+                return (yR - self.min_mean_yR) / self.max_std_yR
         else:
-            return (yR - self.min_yR) / (self.max_yR - self.min_yR)
+            raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
 
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
         if self.mode == "c+o":
@@ -522,11 +563,13 @@ class MLP(tf.keras.Model):
         y_pred = tf.cast(tf.cast(tf.reduce_all(y_pred, axis=1), tf.int32), tf.float32)
         return tf.keras.metrics.binary_accuracy(y_true, y_pred)
 
-    def predict_objectives(self, X, nan_to_num=True, max_zero=True, verbose=0):
+    def predict_objectives(self, X, nan_to_num=False, max_zero=False, verbose=0):
         yR = self.predict(X, verbose=verbose)
 
         if self.mode == "c+o":
             yR = yR["objectives"]
+
+        yR = np.array(yR)
 
         if nan_to_num:
             yR = np.nan_to_num(yR)
@@ -535,6 +578,21 @@ class MLP(tf.keras.Model):
             yR = np.maximum(np.zeros_like(yR), yR)
 
         return yR
+
+    def predict(self, x, *args, **kwargs):
+        y_pred = super().predict(x, *args, **kwargs)
+
+        if self.mode == "c+o":
+            return {
+                "constraints": y_pred["constraints"],
+                "objectives": self.norm_output(y_pred["objectives"], inverse=True),
+            }
+
+        if self.mode == "c":
+            return y_pred
+
+        if self.mode == "o":
+            return self.norm_output(y_pred, inverse=True)
 
     def make_feasible(
         self,
