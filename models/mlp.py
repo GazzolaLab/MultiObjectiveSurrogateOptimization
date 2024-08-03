@@ -11,9 +11,11 @@ from sklearn.metrics import (
 )
 from scipy.stats import spearmanr
 from keras.layers import LeakyReLU
-
+import tensorflow_probability as tfp
 
 huber_loss = tf.keras.losses.Huber()
+
+log_cosh_loss = tf.keras.losses.LogCosh()
 
 
 def mase_loss(y_true, y_pred):
@@ -33,6 +35,31 @@ def sqrtscaled_huber(y_true, y_pred):
 
 def logscaled_mse(y_true, y_pred):
     return tf.reduce_mean(tf.square(tf.math.log1p(y_true) - tf.math.log1p(y_pred)))
+
+
+def normalized_mse(y_true, y_pred):
+    return tf.reduce_mean(tf.square(y_true - y_pred) / tf.math.reduce_variance(y_true))
+
+
+def mape(y_true, y_pred):
+    return tf.reduce_mean(tf.abs((y_true - y_pred) / y_true))
+
+
+def smape(y_true, y_pred):
+    return 2.0 * tf.reduce_mean(
+        tf.abs(y_true - y_pred) / (tf.abs(y_true) + tf.abs(y_pred))
+    )
+
+
+def weighted_log_cosh_loss(y_true, y_pred):
+    error = y_pred - y_true
+    weight = 1 / (tf.abs(y_true) * 1.0 + 1)
+
+    weight_norm = weight / tf.reduce_sum(weight, axis=-1, keepdims=True)
+
+    loss = weight_norm * tfp.math.log_cosh(error)
+
+    return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
 
 
 def apply_bounds(tensor, bounds):
@@ -113,29 +140,21 @@ class MLP(tf.keras.Model):
         # Use LeakyReLU to prevent zeroing of forward pass
         #  in low-data regimes
         # -> https://github.com/keras-team/keras/issues/6447
-        self.hidden = tf.keras.layers.Dense(
-            32,
-            activation=LeakyReLU(),
-            kernel_constraint=tf.keras.constraints.MaxNorm(3),
-            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
-        )
-        self.hidden2 = tf.keras.layers.Dense(
-            32,
-            activation=LeakyReLU(),
-            kernel_constraint=tf.keras.constraints.MaxNorm(3),
-            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
-        )
-        self.hidden3 = tf.keras.layers.Dense(
-            16,
-            activation=LeakyReLU(),
-            kernel_constraint=tf.keras.constraints.MaxNorm(3),
-            kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
-        )
+        self.hidden = [
+            tf.keras.layers.Dense(
+                i,
+                activation=LeakyReLU(),
+                kernel_constraint=tf.keras.constraints.MaxNorm(3),
+                # kernel_regularizer=tf.keras.regularizers.L1L2(l1=1e-5, l2=1e-4),
+                name=f"hidden{i}",
+            )
+            for i in [256, 128, 64]
+        ]
         if multihead:
             self.heads = [
                 [
                     tf.keras.layers.Dense(
-                        8, activation=LeakyReLU(), name=f"regression_{head}_d1"
+                        32, activation=LeakyReLU(), name=f"regression_{head}_d1"
                     ),
                     tf.keras.layers.Dense(1, name=f"regression_{head}_out"),
                 ]
@@ -159,7 +178,7 @@ class MLP(tf.keras.Model):
             num_constraints, activation="sigmoid", name="constraints"
         )
 
-        objective_loss = huber_loss  # multi_output_neg_log_likelihood #logscaled_huber
+        objective_loss = weighted_log_cosh_loss
 
         if self.mode == "c+o":
             loss = {
@@ -219,17 +238,16 @@ class MLP(tf.keras.Model):
             self.xub,
         )
 
-    def build_(self, input_shape):
+    def build_(self, input_shape=None):
+        if input_shape is None:
+            input_shape = [1, self.num_parameters]
         self.call(tf.ones([1, input_shape[-1]]))
 
     def call(self, inputs):
         x = self.normalization_layer(inputs)
-        x = self.hidden(x)
-        x = tf.keras.layers.Dropout(0.2)(x)
-        x = self.hidden2(x)
-        x = tf.keras.layers.Dropout(0.2)(x)
-        x = self.hidden3(x)
-        x = tf.keras.layers.Dropout(0.2)(x)
+        for h in self.hidden:
+            x = h(x)
+            x = tf.keras.layers.Dropout(0.3)(x)
 
         if self.mode == "c+o":
             return {
@@ -248,7 +266,7 @@ class MLP(tf.keras.Model):
             # replace NaNs with maximum
             m = np.max(np.nan_to_num(y), axis=0)
             for c in range(y.shape[1]):
-                y[:, c] = np.nan_to_num(y[:, c], nan=max(m[c], 1e5))
+                y[:, c] = np.nan_to_num(y[:, c], nan=max(1e3 * m[c], 1e5))
         elif nan == "remove":
             r = ~np.any(np.isnan(y), axis=1)
             x = x[r]
