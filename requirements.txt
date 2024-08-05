@@ -2,6 +2,7 @@ miv_simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@main
 dmosopt @ git+https://github.com/iraikov/dmosopt.git@main
 machinable
 tensorflow==2.15
+tensorflow_probability==0.23
 matplotlib
 seaborn
 pandas
