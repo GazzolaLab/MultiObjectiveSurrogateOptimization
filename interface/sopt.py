@@ -58,10 +58,10 @@ class Sopt(Dmosopt):
         return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
 
     def get_model(self, name, **model_options):
-        if name == "mlp" or "joint" in name:
-            from models.mlp import MLP
+        if "joint" in name:
+            from models.fttransformer import FTTransformer
 
-            return MLP(
+            return FTTransformer(
                 self.num_parameters,
                 self.num_constraints,
                 self.num_objectives,
