@@ -429,6 +429,27 @@ class Dmosopt(Component):
             "metadata": metadata,
         }
 
+    def load_xyc(
+        self,
+        region: list | tuple | None = None,
+        filepath: Optional[str] = None,
+        opt_id: Optional[str] = None,
+        problem_id: int = 0,
+    ):
+        mask = slice(None)
+        if isinstance(region, (list, tuple)):
+            mask = slice(*region)
+
+        data = self.load_h5(filepath, opt_id, problem_id)
+
+        x = data["parameters"].to_numpy()[mask]
+        y = data["objectives"].to_numpy()[mask]
+        yC = None
+        if data["constraints"] is not None:
+            yC = (data["constraints"].to_numpy() > 0).astype(int)[mask]
+
+        return x, y, yC
+
     @cachable(file=False)
     def load_h5_optimizer_data(
         self, filepath: Optional[str] = None, opt_id: Optional[str] = None
