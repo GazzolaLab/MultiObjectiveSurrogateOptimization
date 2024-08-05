@@ -1,9 +1,11 @@
 from models.mlp import MLP
+from models.fttransformer import FTTransformer
 import numpy as np
 from machinable.utils import save_file
 import os
 import dmosopt.MOASMO as opt
 import tensorflow as tf
+
 
 def mlp(
     optimizer_cls,
@@ -19,19 +21,22 @@ def mlp(
     objectives=True,
     constraints=False,
     sensitivity=False,
-    outlier_threshold=3.0,
     feasibility_solving=False,
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
+    save_weights=False,
+    iterations=[],
 ):
+    tf.keras.backend.clear_session()
+
     x = Xinit.copy()
     y = Yinit.copy()
     yC = None
     if C is not None:
         yC = (C > 0).astype(int)
 
-    class Model:
+    class _Model:
         def __init__(self, model) -> None:
             self._wrapped = model
 
@@ -47,42 +52,52 @@ def mlp(
                 a = tf.abs(s)
                 n = a / tf.reduce_max(a, axis=0)
                 return tf.reduce_mean(n, axis=0)
+
             sens = self.sensitivity(x, _reduction)
             if isinstance(sens, dict):
                 # disregard constraint gradients
-                sens = sens['objectives']
-            
-            # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations 
+                sens = sens["objectives"]
+
+            # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
             di_crossover = 5 + (sens * 25)
             di_mutation = 5 + (sens * 45)
-            
-            if sensitivity == 'cross_check':
+
+            if sensitivity == "cross_check":
                 # invert values to cross-check effect of sensitivity
                 di_crossover = 30 - (sens * 25)
                 di_mutation = 50 - (sens * 45)
-            
+
             return {
                 "di_mutation": di_mutation,
                 "di_crossover": di_crossover,
             }
 
+        def __call__(self, *args, **kwargs):
+            return self._wrapped(*args, **kwargs)
+
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
 
-    model = Model(
-        MLP(
+    model = _Model(
+        FTTransformer(
             num_parameters=Xinit.shape[1],
             num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
             mode=mode,
-            outlier_threshold=outlier_threshold,
+            xlb=xlb,
+            xub=xub,
+            normalize_targets=True,
         )
     )
 
-    model.autofit(x, y, yC, verbose=0, epochs=np.mean(model.autoepoch(x, y, yC, verbose=0)))
+    model.autofit(
+        x, y, yC, verbose=0, epochs=np.mean(model.autoepoch(x, y, yC, verbose=0))
+    )
 
     scores = model.autoeval(x, y, yC)
+
+    scores["num_samples"] = x.shape[0]
 
     if isinstance(feasibility_solving, str):
         # activate on a certain condition
@@ -132,6 +147,12 @@ def mlp(
             return cls(optimizer_cls(*args, **kwargs))
 
     model.stats = {f"model_{k}": v for k, v in scores.items()}
+
+    if save_weights:
+        model.save_weights(
+            os.path.join(os.path.dirname(file_path), f"weights{len(iterations)}.h5")
+        )
+        iterations.append(0)
 
     return (
         Optimizer.wrapped,
