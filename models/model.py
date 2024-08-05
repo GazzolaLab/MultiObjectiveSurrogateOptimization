@@ -496,7 +496,7 @@ class Model(tf.keras.Model):
                     ]
                 )
                 return tbl
-            raise ValueError(y_pred)
+
             return {
                 "epochs": self._last_fit_epochs,
                 "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),

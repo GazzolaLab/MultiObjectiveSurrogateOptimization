@@ -7,6 +7,39 @@ import math
 from scipy import stats
 
 
+def preprocess(x, y, yC=None, remove_outliers=False, nan="remove"):
+    if nan == "max":
+        # replace NaNs with maximum
+        m = np.max(np.nan_to_num(y), axis=0)
+        for c in range(y.shape[1]):
+            y[:, c] = np.nan_to_num(y[:, c], nan=max(1e3 * m[c], 1e5))
+    elif nan == "remove":
+        r = ~np.any(np.isnan(y), axis=1)
+        x = x[r]
+        y = y[r]
+        if yC is not None:
+            yC = yC[r]
+    else:
+        raise ValueError("Invalid nan mode")
+
+    # filter outliers
+    if remove_outliers is True:
+        remove_outliers = 2
+    mask = slice(None)
+    if remove_outliers is not False:
+        ylog = np.log(y + 1)
+        ylmean = np.mean(ylog, axis=0)
+        ylstd = np.std(ylog, axis=0)
+        zscores = (ylog - ylmean) / ylstd
+        outlier = np.any(np.abs(zscores) > float(remove_outliers), axis=1)
+        mask = ~outlier
+
+    if yC is None:
+        return x[mask], y[mask], yC
+
+    return x[mask], y[mask], yC[mask]
+
+
 def balance_data(X, y, sampling_strategy="auto"):
     dataset = np.hstack((X, y))
     unique_rows, counts = np.unique(y, axis=0, return_counts=True)
