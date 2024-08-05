@@ -10,6 +10,7 @@ from sklearn.metrics import (
     median_absolute_error,
 )
 from scipy.stats import spearmanr
+from models.utils import preprocess
 
 
 huber_loss = tf.keras.losses.Huber()
@@ -51,7 +52,7 @@ def smape(y_true, y_pred):
 
 def weighted_log_cosh_loss(y_true, y_pred):
     import tensorflow_probability as tfp
-    
+
     error = y_pred - y_true
     weight = 1 / (tf.abs(y_true) * 1.0 + 1)
 
@@ -110,7 +111,7 @@ class Model(tf.keras.Model):
         mode="c+o",
         xlb=None,
         xub=None,
-        learning_rate=0.1,
+        learning_rate=0.001,
         outlier_threshold=0,
         exclude_infeasible=False,
         normalize_targets=True,
@@ -137,7 +138,7 @@ class Model(tf.keras.Model):
 
         self.prepare_layers()
 
-        objective_loss = 'mse' # weighted_log_cosh_loss # 'mse'
+        objective_loss = "mse"  # weighted_log_cosh_loss # 'mse'
 
         if self.mode == "c+o":
             loss = {
@@ -156,10 +157,7 @@ class Model(tf.keras.Model):
             metrics = ["mae"]
 
         self.compile(
-            "adam",
-            # optimizer=tf.keras.optimizers.Adam(
-            #     learning_rate=learning_rate, global_clipnorm=None
-            # ),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             loss=loss,
             metrics=metrics,
         )
@@ -203,34 +201,13 @@ class Model(tf.keras.Model):
         self.call(tf.ones([1, input_shape[-1]]))
 
     def preprocess(self, x, y, yC=None, remove_outliers=False, nan="remove"):
-        if nan == "max":
-            # replace NaNs with maximum
-            m = np.max(np.nan_to_num(y), axis=0)
-            for c in range(y.shape[1]):
-                y[:, c] = np.nan_to_num(y[:, c], nan=max(1e3 * m[c], 1e5))
-        elif nan == "remove":
-            r = ~np.any(np.isnan(y), axis=1)
-            x = x[r]
-            y = y[r]
-            if yC is not None:
-                yC = yC[r]
-        else:
-            raise ValueError("Invalid nan mode")
-
-        # filter outliers
-        mask = slice(None)
-        if remove_outliers and self.outlier_threshold > 0:
-            ylog = np.log(y + 1)
-            ylmean = np.mean(ylog, axis=0)
-            ylstd = np.std(ylog, axis=0)
-            zscores = (ylog - ylmean) / ylstd
-            outlier = np.any(np.abs(zscores) > self.outlier_threshold, axis=1)
-            mask = ~outlier
-
-        if yC is None:
-            return x[mask], y[mask], yC
-
-        return x[mask], y[mask], yC[mask]
+        return preprocess(
+            x,
+            y,
+            yC,
+            remove_outliers=self.outlier_threshold if remove_outliers else False,
+            nan=nan,
+        )
 
     def autofit(
         self,
@@ -434,6 +411,16 @@ class Model(tf.keras.Model):
             raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
 
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
+
+        def normed(metric):
+            def _w(y_true, y_pred):
+                return metric(
+                    self.norm_output(y_true),
+                    self.norm_output(y_pred),
+                )
+
+            return _w
+
         if self.mode == "c+o":
             assert (
                 not per_feature
@@ -452,13 +439,13 @@ class Model(tf.keras.Model):
                 "recall": float(recall_score(y_test_prime, y_pred_prime)),
                 "f1": float(f1_score(y_test_prime, y_pred_prime)),
                 "mdae": float(
-                    median_absolute_error(
+                    normed(median_absolute_error)(
                         y_test["objectives"],
                         y_pred["objectives"],
                     )
                 ),
                 "mae": float(
-                    mean_absolute_error(
+                    normed(mean_absolute_error)(
                         y_test["objectives"],
                         y_pred["objectives"],
                     )
@@ -502,13 +489,13 @@ class Model(tf.keras.Model):
             y_pred = self.predict(X_test, verbose=verbose)
             return {
                 "mdae": float(
-                    median_absolute_error(
+                    normed(median_absolute_error)(
                         y_test,
                         y_pred,
                     )
                 ),
                 "mae": float(
-                    mean_absolute_error(
+                    normed(mean_absolute_error)(
                         y_test,
                         y_pred,
                     )
@@ -697,8 +684,6 @@ class Model(tf.keras.Model):
             return reduction(tape.gradient(y_pred, X)).numpy()
 
 
-
-
 class Columnwise:
     def __init__(
         self,
@@ -718,7 +703,7 @@ class Columnwise:
         self.xlb = xlb
         self.xub = xub
         self.kwargs = kwargs
-        
+
         self.estimators = [
             model(
                 num_parameters=self.num_parameters,
@@ -728,9 +713,10 @@ class Columnwise:
                 xlb=self.xlb,
                 xub=self.xub,
                 **kwargs,
-            ) for _ in range(self.num_objectives)
+            )
+            for _ in range(self.num_objectives)
         ]
-        
+
     def autofit(
         self,
         x,
@@ -744,14 +730,14 @@ class Columnwise:
         for i, estimator in enumerate(self.estimators):
             estimator.autofit(
                 x,
-                y[:,i:i+1],
+                y[:, i : i + 1],
                 yC,
                 epochs=epochs,
                 batch_size=batch_size,
                 verbose=verbose,
-                **kwargs 
+                **kwargs,
             )
-            
+
     def autoeval(
         self,
         x,
@@ -759,27 +745,24 @@ class Columnwise:
         yC,
         verbose=2,
     ):
-        
+
         for i, estimator in enumerate(self.estimators):
-            e = estimator.autoeval(
-                x,
-                y[:,i:i+1],
-                yC,
-                verbose=verbose
-            )
-            
+            e = estimator.autoeval(x, y[:, i : i + 1], yC, verbose=verbose)
+
         # todo: merge evals
         return e
-    
+
     def predict_objectives(self, X, nan_to_num=False, max_zero=False, verbose=0):
         yR = []
         for i, estimator in enumerate(self.estimators):
-            yR.append(estimator.predict_objectives(
-                X, nan_to_num=nan_to_num, max_zero=max_zero, verbose=verbose
-            ))
-            
+            yR.append(
+                estimator.predict_objectives(
+                    X, nan_to_num=nan_to_num, max_zero=max_zero, verbose=verbose
+                )
+            )
+
         return np.hstack(yR)
-    
+
     def make_feasible(
         self,
         X,
@@ -789,4 +772,4 @@ class Columnwise:
         max_steps_filter=None,
         use_joint_loss=False,
     ):
-        pass # TODO: merge estimate
+        pass  # TODO: merge estimate
