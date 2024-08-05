@@ -75,7 +75,11 @@ def apply_bounds(tensor, bounds):
 
 def acc(y_true, y_pred):
     return tf.reduce_mean(
-        tf.cast(tf.cast(y_pred > 0.5, dtype=tf.int64) == y_true, dtype=tf.float32)
+        tf.cast(
+            tf.cast(y_pred > 0.5, dtype=tf.int32)
+            == tf.cast(y_true > 0.5, dtype=tf.int32),
+            dtype=tf.float32,
+        )
     )
 
 
@@ -115,6 +119,7 @@ class Model(tf.keras.Model):
         outlier_threshold=0,
         exclude_infeasible=False,
         normalize_targets=True,
+        regression_loss="weighted_logcosh",
         **kwargs,
     ):
         super(Model, self).__init__(**kwargs)
@@ -138,7 +143,12 @@ class Model(tf.keras.Model):
 
         self.prepare_layers()
 
-        objective_loss = "mse"  # weighted_log_cosh_loss # 'mse'
+        objective_loss = {
+            "mse": "mse",
+            "huber": huber_loss,
+            "logcosh": log_cosh_loss,
+            "weighted_logcosh": weighted_log_cosh_loss,
+        }[regression_loss]
 
         if self.mode == "c+o":
             loss = {
@@ -267,7 +277,9 @@ class Model(tf.keras.Model):
 
         return self.eval(x, Y, verbose=verbose)
 
-    def autoepoch(self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1):
+    def autoepoch(
+        self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="time_series"
+    ):
         if x.shape[0] < n_splits * 2:
             return 1
 
@@ -280,7 +292,7 @@ class Model(tf.keras.Model):
                 x = x[feasible, :]
                 y = y[feasible, :]
 
-        kf = TimeSeriesSplit(n_splits=n_splits)
+        kf = {"kfold": KFold, "time_series": TimeSeriesSplit}[cv](n_splits=n_splits)
         stopped_after_epochs = []
         timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 2500))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
@@ -376,6 +388,8 @@ class Model(tf.keras.Model):
                 epochs=epochs,
                 **kwargs,
             )
+        elif self.mode == "c":
+            return super().fit(x, y, *args, epochs=epochs, **kwargs)
         else:
             return super().fit(
                 x, self.norm_output(y, adapt=True), *args, epochs=epochs, **kwargs
@@ -409,6 +423,12 @@ class Model(tf.keras.Model):
                 return (yR - self.min_mean_yR) / self.max_std_yR
         else:
             raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
+
+    def get_output_norm(self):
+        if not self.normalize_targets:
+            return None
+
+        return self.min_mean_yR.numpy().tolist(), self.max_std_yR.numpy().tolist()
 
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
 
@@ -476,7 +496,7 @@ class Model(tf.keras.Model):
                     ]
                 )
                 return tbl
-
+            raise ValueError(y_pred)
             return {
                 "epochs": self._last_fit_epochs,
                 "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
@@ -488,6 +508,7 @@ class Model(tf.keras.Model):
         if self.mode == "o":
             y_pred = self.predict(X_test, verbose=verbose)
             return {
+                "epochs": self._last_fit_epochs,
                 "mdae": float(
                     normed(median_absolute_error)(
                         y_test,
