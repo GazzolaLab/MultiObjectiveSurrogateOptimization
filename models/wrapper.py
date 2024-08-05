@@ -1,5 +1,7 @@
 import numpy as np
 from sklearn.metrics import mean_absolute_error, median_absolute_error
+from models.utils import preprocess
+
 
 class Wrapper:
     def __init__(self, name, xlb, xub, **model_options) -> None:
@@ -17,21 +19,7 @@ class Wrapper:
             self.model_cls = MEGP_Matern
 
     def preprocess(self, x, y, yC):
-        x = np.nan_to_num(x)
-        y = np.nan_to_num(y)
-        yC = np.nan_to_num(yC)
-
-        # remove outliers
-        ylog = np.log(y + 1)
-        ylmean = np.mean(ylog, axis=0)
-        ylstd = np.std(ylog, axis=0)
-        zscores = (ylog - ylmean) / ylstd
-        outlier = np.any(np.abs(zscores) > 2, axis=1)
-
-        if yC is None:
-            return x[~outlier], y[~outlier], yC
-    
-        return x[~outlier], y[~outlier], yC[~outlier]
+        return preprocess(x, y, yC, nan="remove")
 
     def autofit(self, x, y, yC, *args, **kwargs):
         x, y, yC = self.preprocess(x, y, yC)
@@ -43,7 +31,7 @@ class Wrapper:
                 x = x[feasible, :]
                 y = y[feasible, :]
                 yC = yC[feasible, :]
-        
+
         from dmosopt import MOEA
 
         x, y = MOEA.remove_duplicates(x, y)
@@ -67,22 +55,45 @@ class Wrapper:
     ):
         x, y, yC = self.preprocess(x, y, yC)
 
+        try:
+            mean_yR = []
+            std_yR = []
+            for m in self.model.smlist:
+                mean_yR.append(m._y_train_mean)
+                std_yR.append(m._y_train_std)
+            mean_yR = np.array(mean_yR)
+            std_yR = np.array(std_yR)
+
+            def normed(metric):
+                def _w(y_true, y_pred):
+                    return metric(
+                        (y_true - mean_yR) / std_yR,
+                        (y_pred - mean_yR) / std_yR,
+                    )
+
+                return _w
+
+        except:
+
+            def normed(metric):
+                return metric
+
         y_pred = self.model.evaluate(x)
 
         return {
             "mdae": float(
-                median_absolute_error(
+                normed(median_absolute_error)(
                     y,
                     y_pred,
                 )
             ),
             "mae": float(
-                mean_absolute_error(
+                normed(mean_absolute_error)(
                     y,
                     y_pred,
                 )
             ),
         }
-        
+
     def predict(self, x):
         return self.model.evaluate(x)
