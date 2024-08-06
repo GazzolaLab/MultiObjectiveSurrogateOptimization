@@ -7,7 +7,7 @@ import dmosopt.MOASMO as opt
 import tensorflow as tf
 
 
-def mlp(
+def joint(
     optimizer_cls,
     Xinit,
     Yinit,
@@ -25,9 +25,38 @@ def mlp(
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
-    save_weights=False,
+    save_weights=True,
     iterations=[],
 ):
+    """
+    Joint model surrogate
+
+    # Arguments
+
+    - mode="c+o"
+        What information to use when training the model (c=constraints, o=objectives, c+o=both)
+    - objectives=True
+    - constraints=False
+    - sensitivity=False
+        Things to predict with this model
+        Note that if a scope is disabled, it will fall back on the usual
+        dmosopt options. For example, if you specify `"surrogate_method_name": 'gpr'`
+        and set `constraints=True`, the MLP model will be used for the constraints
+        but to predict the objective the usual `gpr` surrogate will be used.
+    - feasibility_solving=False
+        If True, the gradient information of the model will be used to push samples
+        towards feasibility. This can be activated conditionally using a string,
+        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+    - feasibility_max_iterations=50
+        Only applies if feasibility_solving is True; number of iterations
+    - feasibility_use_joint_loss=True
+        Only applies if feasibility_solving is True; whether to use joint loss
+    - feasibility_max_steps_filter=True
+        Only applies if feasibility_solving is True; optional early stopping
+    - save_weights=True
+        Whether to save a checkpoint of the trained model in each epoch
+    """
+
     tf.keras.backend.clear_session()
 
     x = Xinit.copy()
@@ -87,7 +116,6 @@ def mlp(
             mode=mode,
             xlb=xlb,
             xub=xub,
-            normalize_targets=True,
         )
     )
 
@@ -173,6 +201,7 @@ def dynamic_sampling(
     max_samples=500,
     stop_condition="convergence_condition",
     convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)",
+    mode="c+o",
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
@@ -181,6 +210,31 @@ def dynamic_sampling(
     # ---
     _history=[],
 ):
+    """
+    Surrogate-driven sampling
+
+    # Arguments
+
+    - samples_per_iteration=25
+    - max_samples=500
+    - stop_condition="convergence_condition"
+    - convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)"
+    - mode="c+o"
+        What information to use when training the model (c=constraints, o=objectives, c+o=both)
+    - optimizer_sampling=None
+        Whether to use the optimizer to suggest samples
+    - feasibility_solving=False
+        If True, the gradient information of the model will be used to push samples
+        towards feasibility. This can be activated conditionally using a string,
+        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+    - feasibility_max_iterations=50
+        Only applies if feasibility_solving is True; number of iterations
+    - feasibility_use_joint_loss=True
+        Only applies if feasibility_solving is True; whether to use joint loss
+    - feasibility_max_steps_filter=True
+        Only applies if feasibility_solving is True; optional early stopping
+    """
+
     if len(evaluated_samples) >= max_samples:
         # time-out
         return
@@ -198,10 +252,13 @@ def dynamic_sampling(
     c_completed = (c_completed > 0).astype(int)
     feasible = c_completed.all(axis=1)
 
-    model = MLP(
+    model = FTTransformer(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
+        mode=mode,
+        xlb=sampler["xlb"],
+        xub=sampler["xub"],
     )
 
     autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=1)

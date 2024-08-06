@@ -90,7 +90,7 @@ class Sopt(Dmosopt):
             raise ValueError("Invalid mode")
         return {
             "dopt_params": {
-                "surrogate_custom_training": "models.ops.mlp",
+                "surrogate_custom_training": "models.ops.joint",
                 "surrogate_custom_training_kwargs": kwargs,
             }
         }
