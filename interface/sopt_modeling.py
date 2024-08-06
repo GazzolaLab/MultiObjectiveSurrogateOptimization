@@ -16,11 +16,11 @@ class Modeling(Sopt):
                 "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes",
                 "optimizer_name": "nsga2",
                 "initial_method": "slh",
-                "n_initial": 100,
+                "n_initial": 50,
                 "initial_maxiter": 10,
                 "n_epochs": 10,
                 "population_size": 300,
-                "num_generations": 50,
+                "num_generations": 30,
                 "termination_conditions": True,
                 "resample_fraction": 1.0,
                 "surrogate_method_name": None,
@@ -31,7 +31,6 @@ class Modeling(Sopt):
                 "save_surrogate_evals": True,
             }
         )
-        nodes: str = "20"
 
     def version_from_protocol(
         self,
@@ -99,7 +98,7 @@ class Modeling(Sopt):
                     "tau_error",
                     "fI_error",
                     "spike_amplitude_error",
-                    #"ISI_adaptation_error",
+                    # "ISI_adaptation_error",
                 ],
                 "constraint_names": [
                     "monotonic_fI",
@@ -480,9 +479,10 @@ class Modeling(Sopt):
             best = self.get_best(sort_by="-np.max(y, axis=1)", epsilon="auto")
             param_dict = best["x"].iloc[-1].to_dict()
             feature_dict = best["f"].iloc[-1].to_dict()
-            param_dict.update({ k: feature_dict[k]
-                                for k in ['ic_constant_hold', 'ic_constant_rest'] })
-            
+            param_dict.update(
+                {k: feature_dict[k] for k in ["ic_constant_hold", "ic_constant_rest"]}
+            )
+
         param_dict.update(self.config.dopt_params.problem_parameters)
 
         logger.info(f"{pprint.pformat(param_dict)}")
@@ -648,7 +648,7 @@ class Modeling(Sopt):
 
         nrows = 6
         ncols = 3
-        fig, axs = plt.subplots(nrows, ncols, figsize=(15,8))
+        fig, axs = plt.subplots(nrows, ncols, figsize=(15, 8))
         axs[0, 0].plot(vec_t, vec_soma_v, linewidth=3, color="r", label="soma_v")
         axs[1, 0].plot(vec_t, vec_dend_v, linewidth=3, color="r", label="dend_v")
         axs[2, 0].plot(vec_t, vec_soma_ina, linewidth=3, color="b", label="soma_ina")
@@ -700,11 +700,6 @@ class Modeling(Sopt):
 
         try:
             del dc["obj_fun_init_args"]["protocol_config_dict"]
-        except:
-            pass
-
-        try:
-            del context["config"]["nodes"]
         except:
             pass
 

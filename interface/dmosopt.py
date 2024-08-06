@@ -53,7 +53,7 @@ class Dmosopt(Component):
         collective_mode: Literal["gather", "sendrecv"] = "gather"
         verbose: bool = True
         worker_debug: bool = False
-        nodes: str = "20"
+        nodes: Optional[str] = None
         ranks: Optional[int] = None
 
         @field_validator("dopt_params", mode="before")
