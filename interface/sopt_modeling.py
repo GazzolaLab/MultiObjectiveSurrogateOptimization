@@ -15,7 +15,7 @@ class Modeling(Sopt):
                 "opt_id": "default",
                 "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes",
                 "optimizer_name": "nsga2",
-                "initial_method": "slh",
+                "initial_method": "mc",
                 "n_initial": 50,
                 "initial_maxiter": 10,
                 "n_epochs": 10,
