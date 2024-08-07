@@ -332,13 +332,13 @@ def dynamic_sampling(
 
     utilities = {"recent": h, "history": _history}
 
-    scores["convergence_condition"] = is_converged = False
+    scores["convergence_condition"] = False
     if len(_history) > 0 and _history[-1]["convergence_condition"] is True:
-        scores["convergence_condition"] = is_converged = True
+        scores["convergence_condition"] = True
     elif isinstance(convergence_condition, str) and eval(
         convergence_condition, scores.copy(), utilities.copy()
     ):
-        scores["convergence_condition"] = is_converged = True
+        scores["convergence_condition"] = True
         
     if isinstance(feasibility_solving, str):
         feasibility_solving = bool(eval(feasibility_solving, scores.copy()))
@@ -419,9 +419,11 @@ def dynamic_sampling(
     if verbose > 0:
         print('Feasibility solving completed ...')
         print('Inputs:')
-        pprint(candidate_samples)
+        pprint(candidate_samples[:5])
         print('='*20)
         print('Transformed:')
-        pprint(x_transformed)
+        pprint(x_transformed[:5])
+        print("Delta:")
+        pprint(candidate_samples[:5] - x_transformed[:5])
 
     return x_transformed

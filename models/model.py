@@ -576,7 +576,7 @@ class Model(tf.keras.Model):
     ):
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-        # raise ValueError(self.layers)
+
         for layer in self.layers:
             layer.trainable = False
 
