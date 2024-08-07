@@ -352,7 +352,8 @@ class Model(tf.keras.Model):
                             if self.mode == "c+o"
                             else ["val_loss"]
                         )
-                    ],
+                    ]
+                    + [tf.keras.callbacks.TerminateOnNaN()],
                     verbose=verbose,
                     initial_epoch=total_epochs,
                 )
@@ -414,13 +415,16 @@ class Model(tf.keras.Model):
                 ) + self.min_mean_yR
             else:
                 return (
-                    (yR - self.min_mean_yR) / (self.max_std_yR - self.min_mean_yR)
+                    (yR - self.min_mean_yR)
+                    / (self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon())
                 ) - 0.5
         elif method == "standard":
             if inverse:
                 return yR * self.max_std_yR + self.min_mean_yR
             else:
-                return (yR - self.min_mean_yR) / self.max_std_yR
+                return (yR - self.min_mean_yR) / (
+                    self.max_std_yR + tf.keras.backend.epsilon()
+                )
         else:
             raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
 
@@ -570,11 +574,9 @@ class Model(tf.keras.Model):
         max_steps_filter=None,
         use_joint_loss=False,
     ):
-        if self.mode == "o":
-            raise RuntimeError("Invalid mode")
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-
+        # raise ValueError(self.layers)
         for layer in self.layers:
             layer.trainable = False
 
@@ -615,36 +617,41 @@ class Model(tf.keras.Model):
 
                 prediction = self(z)
                 logits = prediction
-                if self.mode == "c+o":
-                    logits = prediction["constraints"]
-                loss = loss_fn(
-                    tf.constant(
-                        np.ones([input_sample.shape[0], self.num_constraints]),
-                        dtype=tf.float32,
-                    ),
-                    logits,
-                )
-                if self.mode == "c+o" and use_joint_loss:
-                    # add penalty for regression targets
-                    loss = loss + tf.reduce_sum(
-                        tf.math.maximum(prediction["objectives"], 0)
+                if self.mode == "o":
+                    # simply minimize the objectives
+                    loss = tf.reduce_mean(logits)
+                else:
+                    if self.mode == "c+o":
+                        logits = prediction["constraints"]
+                    loss = loss_fn(
+                        tf.constant(
+                            np.ones([input_sample.shape[0], self.num_constraints]),
+                            dtype=tf.float32,
+                        ),
+                        logits,
                     )
+                    if self.mode == "c+o" and use_joint_loss:
+                        # add penalty for regression targets
+                        loss = loss + tf.reduce_mean(prediction["objectives"])
 
             if iteration > max_iterations:
                 break
 
             grads = tape.gradient(loss, input_sample)
+            if grads is None:
+                raise RuntimeError("Gradient computation failed")
 
-            is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
+            if self.mode != "o":
+                is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
 
-            # record number of steps for feasible samples
-            steps = tf.where(is_feasible, steps, iteration)
+                # record number of steps for feasible samples
+                steps = tf.where(is_feasible, steps, iteration)
 
-            # zero out grads for samples that are feasible
-            is_feasible_where = tf.tile(
-                tf.expand_dims(is_feasible, axis=1), [1, grads.shape[1]]
-            )
-            grads = tf.where(is_feasible_where, tf.zeros_like(grads), grads)
+                # zero out grads for samples that are feasible
+                is_feasible_where = tf.tile(
+                    tf.expand_dims(is_feasible, axis=1), [1, grads.shape[1]]
+                )
+                grads = tf.where(is_feasible_where, tf.zeros_like(grads), grads)
 
             optimizer.apply_gradients([(grads, input_sample)])
 
@@ -679,7 +686,7 @@ class Model(tf.keras.Model):
         if max_steps_filter is True:
             max_steps_filter = max_iterations - 2
 
-        if not max_steps_filter:
+        if not max_steps_filter or self.mode == "o":
             return zp, steps
 
         # only use the samples where the steps where below cutoff

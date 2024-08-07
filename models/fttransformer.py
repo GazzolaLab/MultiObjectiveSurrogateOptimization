@@ -14,22 +14,29 @@ class TransformerBlock(tf.keras.layers.Layer):
                 tf.keras.layers.Dense(embedding_dimension),
             ]
         )
-        self.norm = [tf.keras.layers.LayerNormalization(epsilon=1e-6) for _ in range(2)]
-        self.dol = [tf.keras.layers.Dropout(dropout) for _ in range(2)]
+        self.norm0 = tf.keras.layers.LayerNormalization(epsilon=1e-6) 
+        self.norm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.dol0 = tf.keras.layers.Dropout(dropout)
+        self.dol1 = tf.keras.layers.Dropout(dropout)
 
     def call(self, inputs, training):
         attention = self.mha(inputs, inputs)
-        attention = self.dol[0](attention, training=training)
-        x = self.norm[0](inputs + attention)
+        attention = self.dol0(attention, training=training)
+        x = self.norm0(inputs + attention)
         ffo = self.ffn(x)
-        ffo = self.dol[1](ffo, training=training)
-        return self.norm[1](x + ffo)
+        ffo = self.dol1(ffo, training=training)
+        return self.norm1(x + ffo)
 
 
 class FTTransformer(Model):
     def prepare_layers(self):
         self.norm = tf.keras.layers.LayerNormalization()
         self.embedding = tf.keras.layers.Embedding(input_dim=1000, output_dim=16)
+        # TODO: support inverse-grad
+        # self.embedding = tf.keras.Sequential([
+        #     tf.keras.layers.Reshape((-1, 1)),
+        #     tf.keras.layers.Dense(units=16, kernel_initializer='random_uniform', use_bias=False)
+        # ])
 
         self.transformers = [
             TransformerBlock(embedding_dimension=16, ff_dimension=16, num_heads=8)

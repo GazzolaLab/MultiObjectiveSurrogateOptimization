@@ -1,10 +1,10 @@
-from models.mlp import MLP
 from models.fttransformer import FTTransformer
 import numpy as np
 from machinable.utils import save_file
 import os
 import dmosopt.MOASMO as opt
 import tensorflow as tf
+from pprint import pprint
 
 
 def joint(
@@ -207,6 +207,7 @@ def dynamic_sampling(
     feasibility_max_iterations=50,
     feasibility_use_joint_loss=True,
     feasibility_max_steps_filter=True,
+    verbose=1,
     # ---
     _history=[],
 ):
@@ -221,6 +222,7 @@ def dynamic_sampling(
     - convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)"
     - mode="c+o"
         What information to use when training the model (c=constraints, o=objectives, c+o=both)
+        Add `!` to force mode even if most of the constraint samples are equal
     - optimizer_sampling=None
         Whether to use the optimizer to suggest samples
     - feasibility_solving=False
@@ -234,9 +236,13 @@ def dynamic_sampling(
     - feasibility_max_steps_filter=True
         Only applies if feasibility_solving is True; optional early stopping
     """
+    if verbose > 0:
+        print(f"Dynamic sampling: starting iteration {iteration} ({file_path})")
 
     if len(evaluated_samples) >= max_samples:
         # time-out
+        if verbose > 0:
+            print(f"Dynamic sampling reached maximum {max_samples}, terminating ...")
         return
 
     if len(evaluated_samples) == 0:
@@ -251,29 +257,67 @@ def dynamic_sampling(
 
     c_completed = (c_completed > 0).astype(int)
     feasible = c_completed.all(axis=1)
-
+    
+    unique_rows, counts = np.unique(c_completed, axis=0, return_counts=True)
+    max_count = np.max(counts)
+    constraint_unique_samples = len(unique_rows)
+    constraint_equal_ratio = max_count / c_completed.shape[0]
+    
+    # check if all constraints are equal
+    #  this may happen at the beginning and will make 
+    if constraint_unique_samples < 5 or constraint_equal_ratio > 0.99:
+        if verbose > 0:
+            print("Most or all constraint samples are equal")
+        
+        if '!' in mode:
+            if mode.replace('!', '') == 'c':
+                # constraint-only training is meaningless, keep sampling
+                if verbose > 0:
+                    print('Continue with sampling ...')
+                return next_samples
+            
+            # leave forced mode
+        else:
+            # fall back on objectives alone
+            if verbose > 0:
+                print(f"Using o-mode (overriding {mode}-mode)")
+            mode = 'o'
+    
+    from models.mlp import MLP as FTTransformer # to support inverse-grad
     model = FTTransformer(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
-        mode=mode,
+        mode=mode.replace('!',''),
         xlb=sampler["xlb"],
         xub=sampler["xub"],
     )
 
-    autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=1)
+    autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=0)
+    
+    if min(autoepochs) < 5:
+        if verbose > 0:
+            print("Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ...")
+        return next_samples
 
     model.autofit(
         x_completed,
         y_completed,
         c_completed,
-        verbose=1,
+        verbose=0,
         epochs=np.mean(autoepochs),
     )
 
     # gather stats
     scores = model.autoeval(x_completed, y_completed, c_completed)
+    
+    scores.setdefault('accuracy', -1)
+    scores.setdefault('precision', -1)
+    scores.setdefault('recall', -1)
+    scores.setdefault('f1', -1)
 
+    scores['constraint_equal_ratio'] = constraint_equal_ratio
+    scores['constraint_unique_samples'] = constraint_unique_samples
     scores["global_feasible_ratio"] = np.mean(feasible)
     scores["feasible_ratio"] = np.mean(feasible[-samples_per_iteration:])
     scores["ecov"] = np.std(autoepochs) / np.mean(autoepochs)
@@ -295,6 +339,14 @@ def dynamic_sampling(
         convergence_condition, scores.copy(), utilities.copy()
     ):
         scores["convergence_condition"] = is_converged = True
+        
+    if isinstance(feasibility_solving, str):
+        feasibility_solving = bool(eval(feasibility_solving, scores.copy()))
+    scores["feasibility_solving"] = feasibility_solving
+
+    if verbose > 0:
+        print(f"Dynamic sampling evaluation:")
+        pprint(scores)
 
     # save meta-data
     save_file([os.path.dirname(file_path), "dynamic_sampling.jsonl"], scores, mode="a")
@@ -303,6 +355,8 @@ def dynamic_sampling(
     if isinstance(stop_condition, str) and eval(
         stop_condition, scores.copy(), utilities.copy()
     ):
+        if verbose > 0:
+            print("Dynamic sampling stop condition reached, stopping ...")
         return
 
     # generate next samples
@@ -349,7 +403,7 @@ def dynamic_sampling(
     assert len(candidate_samples) == samples_per_iteration, len(candidate_samples)
     candidate_samples = np.array(candidate_samples)
 
-    if not is_converged or feasibility_solving is False:
+    if feasibility_solving is False:
         return candidate_samples
 
     # feasibiliy solving
@@ -361,5 +415,13 @@ def dynamic_sampling(
         max_steps_filter=feasibility_max_steps_filter,
         use_joint_loss=feasibility_use_joint_loss,
     )
+    
+    if verbose > 0:
+        print('Feasibility solving completed ...')
+        print('Inputs:')
+        pprint(candidate_samples)
+        print('='*20)
+        print('Transformed:')
+        pprint(x_transformed)
 
     return x_transformed
