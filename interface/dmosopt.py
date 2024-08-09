@@ -314,6 +314,18 @@ class Dmosopt(Component):
             obj_fun = config.import_object_by_path(self.config.dopt_params.obj_fun_name)
 
         return obj_fun(p)
+    
+    def evaluate_objective_at_many(self, samples, processes=None):
+        if processes is False:
+            return [self.evaluate_objective_at(x) for x in samples]
+        
+        import multiprocessing
+        
+        if processes is None:
+            processes = multiprocessing.cpu_count() - 1
+            
+        with multiprocessing.Pool(processes=processes) as pool:
+            return pool.map(self.evaluate_objective_at, samples)
 
     @property
     def output_filepath(self) -> str:
@@ -705,6 +717,10 @@ class Dmosopt(Component):
     @property
     def dc(self):
         return self.config.dopt_params
+    
+    @property
+    def parameter_names(self) -> list[str]:
+        return list(self.config.dopt_params.space.keys())
 
     @property
     def constraint_names(self) -> list[str]:
