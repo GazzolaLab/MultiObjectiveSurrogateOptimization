@@ -314,16 +314,16 @@ class Dmosopt(Component):
             obj_fun = config.import_object_by_path(self.config.dopt_params.obj_fun_name)
 
         return obj_fun(p)
-    
+
     def evaluate_objective_at_many(self, samples, processes=None):
         if processes is False:
             return [self.evaluate_objective_at(x) for x in samples]
-        
+
         import multiprocessing
-        
+
         if processes is None:
             processes = multiprocessing.cpu_count() - 1
-            
+
         with multiprocessing.Pool(processes=processes) as pool:
             return pool.map(self.evaluate_objective_at, samples)
 
@@ -441,8 +441,9 @@ class Dmosopt(Component):
             "metadata": metadata,
         }
 
-    def load_xyc(
+    def load_h5_arrays(
         self,
+        include="xyc",
         region: list | tuple | None = None,
         filepath: Optional[str] = None,
         opt_id: Optional[str] = None,
@@ -454,13 +455,27 @@ class Dmosopt(Component):
 
         data = self.load_h5(filepath, opt_id, problem_id)
 
-        x = data["parameters"].to_numpy()[mask]
-        y = data["objectives"].to_numpy()[mask]
-        yC = None
-        if data["constraints"] is not None:
-            yC = (data["constraints"].to_numpy() > 0).astype(int)[mask]
+        result = []
+        for i in include:
+            if i == "x":
+                q = data["parameters"].to_numpy()[mask]
+            elif i == "y":
+                q = data["objectives"].to_numpy()[mask]
+            elif i == "f":
+                q = None
+                if data["features"] is not None:
+                    q = data["features"].to_numpy()[mask]
+            elif i == "c":
+                q = None
+                if data["constraints"] is not None:
+                    q = (data["constraints"].to_numpy() > 0).astype(int)[mask]
+            elif i == "p":
+                q = data["predictions"].to_numpy()[mask]
+            else:
+                raise ValueError(f"Invalid include '{i}'")
+            result.append(q)
 
-        return x, y, yC
+        return tuple(result)
 
     @cachable(file=False)
     def load_h5_optimizer_data(
@@ -717,7 +732,7 @@ class Dmosopt(Component):
     @property
     def dc(self):
         return self.config.dopt_params
-    
+
     @property
     def parameter_names(self) -> list[str]:
         return list(self.config.dopt_params.space.keys())
