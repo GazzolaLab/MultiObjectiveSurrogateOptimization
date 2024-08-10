@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.metrics import mean_absolute_error, median_absolute_error
+from sklearn.metrics import mean_absolute_error, median_absolute_error, r2_score
 from models.utils import preprocess
 
 
@@ -65,10 +65,12 @@ class Wrapper:
             std_yR = np.array(std_yR)
 
             def normed(metric):
-                def _w(y_true, y_pred):
+                def _w(y_true, y_pred, *args, **kwargs):
                     return metric(
                         (y_true - mean_yR) / std_yR,
                         (y_pred - mean_yR) / std_yR,
+                        *args,
+                        **kwargs,
                     )
 
                 return _w
@@ -81,18 +83,13 @@ class Wrapper:
         y_pred = self.model.evaluate(x)
 
         return {
-            "mdae": float(
-                normed(median_absolute_error)(
-                    y,
-                    y_pred,
-                )
-            ),
-            "mae": float(
-                normed(mean_absolute_error)(
-                    y,
-                    y_pred,
-                )
-            ),
+            "mdae": normed(median_absolute_error)(
+                y, y_pred, multioutput="raw_values"
+            ).tolist(),
+            "r2": normed(r2_score)(y, y_pred, multioutput="raw_values").tolist(),
+            "mae": normed(mean_absolute_error)(
+                y, y_pred, multioutput="raw_values"
+            ).tolist(),
         }
 
     def predict(self, x):

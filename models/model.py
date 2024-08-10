@@ -8,6 +8,7 @@ from sklearn.metrics import (
     f1_score,
     mean_absolute_error,
     median_absolute_error,
+    r2_score,
 )
 from scipy.stats import spearmanr
 from models.utils import preprocess
@@ -119,7 +120,7 @@ class Model(tf.keras.Model):
         outlier_threshold=0,
         exclude_infeasible=False,
         normalize_targets=True,
-        regression_loss="weighted_logcosh",
+        regression_loss="mse",
         **kwargs,
     ):
         super(Model, self).__init__(**kwargs)
@@ -382,7 +383,7 @@ class Model(tf.keras.Model):
             return super().fit(
                 x,
                 {
-                    "objectives": self.norm_output(y["objectives"], adapt=True),
+                    "objectives": self.norm_output(y["objectives"], adapt=True).numpy(),
                     "constraints": y["constraints"],
                 },
                 *args,
@@ -393,7 +394,11 @@ class Model(tf.keras.Model):
             return super().fit(x, y, *args, epochs=epochs, **kwargs)
         else:
             return super().fit(
-                x, self.norm_output(y, adapt=True), *args, epochs=epochs, **kwargs
+                x,
+                self.norm_output(y, adapt=True).numpy(),
+                *args,
+                epochs=epochs,
+                **kwargs,
             )
 
     def norm_output(self, yR, inverse=False, adapt=False, method="standard"):
@@ -437,10 +442,12 @@ class Model(tf.keras.Model):
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
 
         def normed(metric):
-            def _w(y_true, y_pred):
+            def _w(y_true, y_pred, *args, **kwargs):
                 return metric(
-                    self.norm_output(y_true),
-                    self.norm_output(y_pred),
+                    self.norm_output(y_true).numpy(),
+                    self.norm_output(y_pred).numpy(),
+                    *args,
+                    **kwargs,
                 )
 
             return _w
@@ -513,18 +520,15 @@ class Model(tf.keras.Model):
             y_pred = self.predict(X_test, verbose=verbose)
             return {
                 "epochs": self._last_fit_epochs,
-                "mdae": float(
-                    normed(median_absolute_error)(
-                        y_test,
-                        y_pred,
-                    )
-                ),
-                "mae": float(
-                    normed(mean_absolute_error)(
-                        y_test,
-                        y_pred,
-                    )
-                ),
+                "mdae": normed(median_absolute_error)(
+                    y_test, y_pred, multioutput="raw_values"
+                ).tolist(),
+                "r2": normed(r2_score)(
+                    y_test, y_pred, multioutput="raw_values"
+                ).tolist(),
+                "mae": normed(mean_absolute_error)(
+                    y_test, y_pred, multioutput="raw_values"
+                ).tolist(),
             }
 
     def global_accuracy(self, y_true, y_pred):
@@ -556,24 +560,34 @@ class Model(tf.keras.Model):
         if self.mode == "c+o":
             return {
                 "constraints": y_pred["constraints"],
-                "objectives": self.norm_output(y_pred["objectives"], inverse=True),
+                "objectives": self.norm_output(
+                    y_pred["objectives"], inverse=True
+                ).numpy(),
             }
 
         if self.mode == "c":
             return y_pred
 
         if self.mode == "o":
-            return self.norm_output(y_pred, inverse=True)
+            return self.norm_output(y_pred, inverse=True).numpy()
 
     def make_feasible(
         self,
         X,
         learning_rate=0.1,
-        transform="square",
+        transform=None,
         max_iterations=100,
         max_steps_filter=None,
         use_joint_loss=False,
+        verbose=0,
+        return_trace=False,
     ):
+        if transform is None:
+            if self.xlb is not None and self.xub is not None:
+                transform = [(l, u) for l, u in zip(self.xlb, self.xub)]
+            else:
+                transform = "square"
+
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
 
@@ -594,6 +608,7 @@ class Model(tf.keras.Model):
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         loss_fn = tf.keras.losses.BinaryFocalCrossentropy()
 
+        trace = [X]
         iteration = 0
         while True:
             with tf.GradientTape() as tape:
@@ -655,8 +670,14 @@ class Model(tf.keras.Model):
 
             optimizer.apply_gradients([(grads, input_sample)])
 
+            if verbose > 0:
+                print(f"Iteration {iteration}, loss = {loss.numpy()}")
+
             if isinstance(transform, (list, tuple)):
                 input_sample.assign(apply_bounds(input_sample, transform))
+
+            if return_trace:
+                trace.append(input_sample.numpy())
 
             iteration += 1
 
@@ -682,6 +703,9 @@ class Model(tf.keras.Model):
             zp = input_sample.numpy()
 
         steps = steps.numpy()
+
+        if return_trace:
+            return trace, steps
 
         if max_steps_filter is True:
             max_steps_filter = max_iterations - 2
