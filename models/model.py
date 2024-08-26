@@ -64,6 +64,19 @@ def weighted_log_cosh_loss(y_true, y_pred):
     return tf.reduce_mean(tf.reduce_sum(loss, axis=-1))
 
 
+def distance_weighted_mse(y_true, y_pred):
+    weight = 1 / (1 + tf.abs(y_true))
+    weighted_squared_error = weight * tf.square(y_true - y_pred)
+    loss = tf.reduce_sum(weighted_squared_error, axis=-1)
+    return tf.reduce_mean(loss)
+
+
+def relative_error_loss(y_true, y_pred, epsilon=1e-7):
+    y_true_safe = tf.where(tf.abs(y_true) > epsilon, y_true, epsilon * tf.sign(y_true))
+    relative_errors = tf.abs((y_true - y_pred) / y_true_safe)
+    return tf.reduce_mean(tf.reduce_mean(relative_errors, axis=-1))
+
+
 def apply_bounds(tensor, bounds):
     return tf.stack(
         [
@@ -149,6 +162,8 @@ class Model(tf.keras.Model):
             "huber": huber_loss,
             "logcosh": log_cosh_loss,
             "weighted_logcosh": weighted_log_cosh_loss,
+            "distance_weighted_mse": distance_weighted_mse,
+            "relative_error": relative_error_loss,
         }[regression_loss]
 
         if self.mode == "c+o":
@@ -403,7 +418,7 @@ class Model(tf.keras.Model):
 
     def norm_output(self, yR, inverse=False, adapt=False, method="standard"):
         if not self.normalize_targets:
-            return yR
+            return tf.constant(yR)
 
         if adapt:
             if method == "minmax":
