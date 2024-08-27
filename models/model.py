@@ -133,6 +133,7 @@ class Model(tf.keras.Model):
         outlier_threshold=0,
         exclude_infeasible=False,
         normalize_targets=True,
+        gradnorm=False,
         regression_loss="mse",
         **kwargs,
     ):
@@ -146,6 +147,7 @@ class Model(tf.keras.Model):
         self.normalize_targets = normalize_targets
         if mode not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
+        self.use_gradnorm = gradnorm and (mode != "c")
         self.mode = mode
         self.xlb = xlb
         self.xub = xub
@@ -154,6 +156,21 @@ class Model(tf.keras.Model):
             self.input_norm_layer = BoundsNormalization(xlb, xub)
         else:
             self.input_norm_layer = tf.keras.layers.Normalization()
+
+        self.gradnorm_layers = []
+
+        if self.use_gradnorm:
+            self.objective_weights = tf.Variable(
+                [1] * self.num_objectives,
+                name="objective_weights",
+                dtype=tf.float32,
+                trainable=False,
+            )
+            self.loss_tracker = tf.keras.metrics.Mean(name="loss")
+            self.loss_t_zero = tf.Variable(
+                [0] * self.num_objectives, trainable=False, dtype=tf.float32
+            )
+            self.timestep = tf.Variable(0, dtype=tf.int32, trainable=False)
 
         self.prepare_layers()
 
@@ -192,20 +209,121 @@ class Model(tf.keras.Model):
             initial_value=np.zeros([1, self.num_parameters]),
             dtype=tf.float32,
             name="inverse_input",
+            trainable=False,
         )
 
         self.min_mean_yR = tf.Variable(
             initial_value=np.zeros([num_objectives]),
             dtype=tf.float32,
             name="min_mean_yR",
+            trainable=False,
         )
         self.max_std_yR = tf.Variable(
             initial_value=np.zeros([num_objectives]),
             dtype=tf.float32,
             name="max_std_yR",
+            trainable=False,
         )
 
         self._last_fit_epochs = -1
+
+    def train_step(self, data):
+        if not self.use_gradnorm:
+            return super().train_step(data)
+
+        x, y = data
+
+        with tf.GradientTape(persistent=True) as tape:
+            y_pred = self(x, training=True)
+            W = sum([l.trainable_variables for l in self.gradnorm_layers], [])
+
+            losses = [
+                self.compute_loss(y=y[i], y_pred=y_pred[i])
+                for i in range(self.num_objectives)
+            ]
+            # save t=0 losses
+            self.loss_t_zero.assign_add(tf.where(self.timestep == 0, losses, 0))
+            weighted_losses = tf.multiply(losses, self.objective_weights)
+
+            # compute weighted loss norms
+            grads = [
+                tape.gradient(weighted_losses[i], W) for i in range(self.num_objectives)
+            ]
+            G_W = [
+                tf.norm(
+                    tf.concat(
+                        [tf.reshape(grad, [-1]) for grad in gs if grad is not None],
+                        axis=0,
+                    ),
+                    ord=2,
+                )
+                for i, gs in enumerate(grads)
+            ]
+
+            # compute training rates
+            L_i_tilde = [
+                losses[i] / self.loss_t_zero[i] for i in range(self.num_objectives)
+            ]
+            L_i_tilde_mean = tf.reduce_mean(L_i_tilde, name="L_i_tilde_mean")
+            r_i_t = [l / (L_i_tilde_mean + 1e-9) for l in L_i_tilde]
+
+            # compute gradnorm loss
+            alpha = 0.5
+            L_grad = 0
+            for i in range(self.num_objectives):
+                L_grad += tf.abs(
+                    G_W[i]
+                    - tf.stop_gradient(
+                        tf.reduce_mean(G_W, name="G_W_mean") * tf.pow(r_i_t[i], alpha)
+                    )
+                )
+
+            # loss weight update
+            grad_norm_grads = tf.gradients(L_grad, self.objective_weights)[0]
+            self.objective_weights.assign_sub(
+                tf.where(self.timestep > 0, 1e-4 * grad_norm_grads, 0)
+            )
+            # normalize
+            self.objective_weights.assign(
+                self.objective_weights
+                / (tf.reduce_sum(self.objective_weights) + 1e-9)
+                * self.num_objectives
+            )
+
+            # module gradient computation
+            total_loss = tf.reduce_mean(weighted_losses)
+            trainable_vars = self.trainable_variables
+            gradients = tape.gradient(total_loss, trainable_vars)
+
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+
+        self.timestep.assign_add(1)
+
+        self.loss_tracker.update_state(total_loss)
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(self.loss_tracker.result())
+            else:
+                metric.update_state(y, y_pred)
+
+        return {
+            **{m.name: m.result() for m in self.metrics},
+            # **{
+            #     "g0": grad_norm_grads[0],
+            #     "g1": grad_norm_grads[1],
+            #     "g2": grad_norm_grads[2],
+            #     "g3": grad_norm_grads[3],
+            #     "r0": r_i_t[0],
+            #     "r1": r_i_t[1],
+            #     "r2": r_i_t[2],
+            #     "r3": r_i_t[3],
+            #     "w0": self.objective_weights[0],
+            #     "w1": self.objective_weights[1],
+            #     "w2": self.objective_weights[2],
+            #     "w3": self.objective_weights[3],
+            #     "w_sum": tf.reduce_sum(self.objective_weights)
+            # },
+        }
 
     def label(self):
         return "joint-" + self.mode
@@ -221,7 +339,7 @@ class Model(tf.keras.Model):
             self.xub,
         )
 
-    def build_(self, input_shape=None):
+    def build(self, input_shape=None):
         if input_shape is None:
             input_shape = [1, self.num_parameters]
         self.call(tf.ones([1, input_shape[-1]]))
@@ -248,6 +366,8 @@ class Model(tf.keras.Model):
         if epochs == "auto":
             m = self.autoepoch(x, y, yC, verbose=0)
             epochs = np.mean(m)
+        else:
+            self.build(input_shape=x.shape)
 
         epochs = int(epochs)
 
@@ -416,7 +536,7 @@ class Model(tf.keras.Model):
                 **kwargs,
             )
 
-    def norm_output(self, yR, inverse=False, adapt=False, method="standard"):
+    def norm_output(self, yR, inverse=False, adapt=False, method="log"):
         if not self.normalize_targets:
             return tf.constant(yR)
 
@@ -427,6 +547,8 @@ class Model(tf.keras.Model):
             elif method == "standard":
                 self.min_mean_yR.assign(np.mean(yR, axis=0))
                 self.max_std_yR.assign(np.std(yR, axis=0))
+            elif method == "log":
+                pass
 
         if method == "minmax":
             if inverse:
@@ -445,6 +567,11 @@ class Model(tf.keras.Model):
                 return (yR - self.min_mean_yR) / (
                     self.max_std_yR + tf.keras.backend.epsilon()
                 )
+        elif method == "log":
+            if inverse:
+                return tf.exp(yR) - 1
+            else:
+                return tf.math.log1p(yR)
         else:
             raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
 
