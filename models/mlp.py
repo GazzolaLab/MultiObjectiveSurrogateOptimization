@@ -20,6 +20,7 @@ class MLP(Model):
             )
             for i in [32, 16, 8]
         ]
+        self.dropouts = [tf.keras.layers.Dropout(0.3) for _ in range(len(self.hidden))]
         if multihead:
             self.heads = [
                 [
@@ -47,11 +48,11 @@ class MLP(Model):
             self.num_constraints, activation="sigmoid", name="constraints"
         )
 
-    def call(self, inputs, training):
+    def call(self, inputs, training=None):
         x = self.input_norm_layer(inputs)
-        for h in self.hidden:
+        for h, dropout in zip(self.hidden, self.dropouts):
             x = h(x)
-            x = tf.keras.layers.Dropout(0.3)(x, training=training)
+            x = dropout(x, training=training)
 
         if self.mode == "c+o":
             return {

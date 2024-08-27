@@ -59,9 +59,16 @@ class Sopt(Dmosopt):
 
     def get_model(self, name, **model_options):
         if "joint" in name:
-            from models.fttransformer import FTTransformer
+            if 'mlp' in name:
+                from models.mlp import MLP as Model
+            elif 'resnet' in name:
+                from models.resnet import Resnet as Model
+            elif 'fttransformer' in name:
+                from models.fttransformer import FTTransformer as Model
+            else:
+                from models.transformer import Transformer as Model
 
-            return FTTransformer(
+            return Model(
                 self.num_parameters,
                 self.num_constraints,
                 self.num_objectives,

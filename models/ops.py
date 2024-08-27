@@ -1,4 +1,4 @@
-from models.fttransformer import FTTransformer
+from models.resnet import Resnet
 import numpy as np
 from machinable.utils import save_file
 import os
@@ -109,7 +109,7 @@ def joint(
             return getattr(self._wrapped, name)
 
     model = _Model(
-        FTTransformer(
+        Resnet(
             num_parameters=Xinit.shape[1],
             num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
@@ -174,11 +174,14 @@ def joint(
         def wrapped(cls, *args, **kwargs):
             return cls(optimizer_cls(*args, **kwargs))
 
-    model.stats = {f"model_{k}": v for k, v in scores.items()}
+    model.stats = {
+        f"model_{k}": v.tolist() if isinstance(v, np.ndarray) else v
+        for k, v in scores.items()
+    }
 
     if save_weights:
         model.save_weights(
-            os.path.join(os.path.dirname(file_path), f"weights{len(iterations)}.h5")
+            os.path.join(os.path.dirname(file_path), f"{len(iterations)}.weights.h5")
         )
         iterations.append(0)
 
@@ -257,47 +260,46 @@ def dynamic_sampling(
 
     c_completed = (c_completed > 0).astype(int)
     feasible = c_completed.all(axis=1)
-    
-    unique_rows, counts = np.unique(c_completed, axis=0, return_counts=True)
-    max_count = np.max(counts)
-    constraint_unique_samples = len(unique_rows)
-    constraint_equal_ratio = max_count / c_completed.shape[0]
-    
+
+    constraint_unique_samples = np.unique(c_completed, axis=0).shape[0]
+    constraint_equal_ratio = constraint_unique_samples / c_completed.shape[0]
+
     # check if all constraints are equal
-    #  this may happen at the beginning and will make 
-    if constraint_unique_samples < 5 or constraint_equal_ratio > 0.99:
+    #  this may happen at the beginning and will make
+    if constraint_unique_samples < 5 or constraint_equal_ratio > 0.1:
         if verbose > 0:
             print("Most or all constraint samples are equal")
-        
-        if '!' in mode:
-            if mode.replace('!', '') == 'c':
+
+        if "!" in mode:
+            if mode.replace("!", "") == "c":
                 # constraint-only training is meaningless, keep sampling
                 if verbose > 0:
-                    print('Continue with sampling ...')
+                    print("Continue with sampling ...")
                 return next_samples
-            
+
             # leave forced mode
         else:
             # fall back on objectives alone
             if verbose > 0:
                 print(f"Using o-mode (overriding {mode}-mode)")
-            mode = 'o'
-    
-    from models.mlp import MLP as FTTransformer # to support inverse-grad
-    model = FTTransformer(
+            mode = "o"
+
+    model = Resnet(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
-        mode=mode.replace('!',''),
+        mode=mode.replace("!", ""),
         xlb=sampler["xlb"],
         xub=sampler["xub"],
     )
 
     autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=0)
-    
+
     if min(autoepochs) < 5:
         if verbose > 0:
-            print("Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ...")
+            print(
+                "Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ..."
+            )
         return next_samples
 
     model.autofit(
@@ -310,14 +312,14 @@ def dynamic_sampling(
 
     # gather stats
     scores = model.autoeval(x_completed, y_completed, c_completed)
-    
-    scores.setdefault('accuracy', -1)
-    scores.setdefault('precision', -1)
-    scores.setdefault('recall', -1)
-    scores.setdefault('f1', -1)
 
-    scores['constraint_equal_ratio'] = constraint_equal_ratio
-    scores['constraint_unique_samples'] = constraint_unique_samples
+    scores.setdefault("accuracy", -1)
+    scores.setdefault("precision", -1)
+    scores.setdefault("recall", -1)
+    scores.setdefault("f1", -1)
+
+    scores["constraint_equal_ratio"] = constraint_equal_ratio
+    scores["constraint_unique_samples"] = constraint_unique_samples
     scores["global_feasible_ratio"] = np.mean(feasible)
     scores["feasible_ratio"] = np.mean(feasible[-samples_per_iteration:])
     scores["ecov"] = np.std(autoepochs) / np.mean(autoepochs)
@@ -339,7 +341,7 @@ def dynamic_sampling(
         convergence_condition, scores.copy(), utilities.copy()
     ):
         scores["convergence_condition"] = True
-        
+
     if isinstance(feasibility_solving, str):
         feasibility_solving = bool(eval(feasibility_solving, scores.copy()))
     scores["feasibility_solving"] = feasibility_solving
@@ -409,19 +411,18 @@ def dynamic_sampling(
     # feasibiliy solving
     x_transformed, _ = model.make_feasible(
         candidate_samples,
-        learning_rate=0.1,
-        transform=[(l, u) for l, u in zip(sampler["xlb"], sampler["xub"])],
+        learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
         use_joint_loss=feasibility_use_joint_loss,
     )
-    
+
     if verbose > 0:
-        print('Feasibility solving completed ...')
-        print('Inputs:')
+        print("Feasibility solving completed ...")
+        print("Inputs:")
         pprint(candidate_samples[:5])
-        print('='*20)
-        print('Transformed:')
+        print("=" * 20)
+        print("Transformed:")
         pprint(x_transformed[:5])
         print("Delta:")
         pprint(candidate_samples[:5] - x_transformed[:5])
