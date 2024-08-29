@@ -1,12 +1,38 @@
 [project]
-name = "MultiObjectiveSurrogateOptimization"
-dynamic = ["version", "dependencies"]
+name = "multiobjectivesurrogateoptimization"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Frithjof Gressmann", email = "fg14@illinois.edu" }
+]
+dependencies = [
+    "dmosopt @ git+https://github.com/iraikov/dmosopt.git@use-rye",
+    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@use-rye",
+    "machinable>=4.10.3",
+    "tensorflow==2.16.2",
+    "tensorflow-probability==0.24",
+    "matplotlib>=3.9.2",
+    "seaborn>=0.13.2",
+    "pandas>=2.2.2",
+    "rich>=13.8.0",
+    "pysqlite3-binary>=0.5.3.post1",
+    "uncertainties>=3.2.2",
+    "globus-sdk>=3.44.0",
+    "nds @ git+https://github.com/KernelA/nds-py.git",
+]
 readme = "README.md"
+requires-python = ">= 3.8"
 
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
+[tool.rye]
+managed = true
+dev-dependencies = []
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/multiobjectivesurrogateoptimization"]
