@@ -19,6 +19,7 @@ dependencies = [
     "uncertainties>=3.2.2",
     "globus-sdk>=3.44.0",
     "nds @ git+https://github.com/KernelA/nds-py.git",
+    "jupyter>=1.1.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
