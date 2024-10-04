@@ -6,8 +6,8 @@ authors = [
     { name = "Frithjof Gressmann", email = "fg14@illinois.edu" }
 ]
 dependencies = [
-    "dmosopt @ git+https://github.com/iraikov/dmosopt.git@use-rye",
-    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@use-rye",
+    "dmosopt @ git+https://github.com/iraikov/dmosopt.git",
+    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator",
     "machinable>=4.10.3",
     "tensorflow==2.16.2",
     "tensorflow-probability==0.24",
@@ -22,7 +22,7 @@ dependencies = [
     "jupyter>=1.1.1",
 ]
 readme = "README.md"
-requires-python = ">= 3.8"
+requires-python = ">= 3.9"
 
 [build-system]
 requires = ["hatchling"]
