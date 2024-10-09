@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from math import cos, pi
+from math import cos
 from scipy.integrate import solve_ivp
 from scipy import interpolate, signal
 import time

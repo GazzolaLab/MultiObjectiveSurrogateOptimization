@@ -1,5 +1,4 @@
 # %%
-import os
 import numpy as np
 from machinable import get
 from dmosopt.MOASMO import xinit
@@ -46,11 +45,8 @@ space_bounds = list(mn.config.dopt_params.space.values())
 
 
 # %%
-import json
 import pickle
-from collections import defaultdict
 import multiprocessing
-from sklearn.utils import gen_batches
 
 batch_size = 23  # 2**8
 

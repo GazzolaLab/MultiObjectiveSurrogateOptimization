@@ -16,7 +16,6 @@ import h5py
 from dmosopt.MOASMO import get_best
 from models.utils import epsilon_get_best
 from dmosopt import indicators
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import datetime

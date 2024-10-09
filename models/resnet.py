@@ -1,6 +1,5 @@
 import tensorflow as tf
 from models.model import Model
-from keras.layers import LeakyReLU
 
 
 class Resnet(Model):

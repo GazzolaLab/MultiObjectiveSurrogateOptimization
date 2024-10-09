@@ -1,5 +1,4 @@
 # %%
-import os
 import numpy as np
 from machinable import get, Component
 from dmosopt.MOASMO import xinit

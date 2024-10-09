@@ -77,7 +77,7 @@ def fit_membrane_time_constant(t, v, t0, t1, rmse_max_tol=1.0):
     v_window = v[start_index:end_index].astype(np.float64)
     try:
         popt, pcov = optimize.curve_fit(exp_curve, t_window, v_window, p0=p0)
-    except (TypeError, RuntimeError) as exc:
+    except (TypeError, RuntimeError):
         logger.info("Curve fit for membrane time constant failed")
         return np.nan, np.nan, np.nan
 

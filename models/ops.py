@@ -347,7 +347,7 @@ def dynamic_sampling(
     scores["feasibility_solving"] = feasibility_solving
 
     if verbose > 0:
-        print(f"Dynamic sampling evaluation:")
+        print("Dynamic sampling evaluation:")
         pprint(scores)
 
     # save meta-data

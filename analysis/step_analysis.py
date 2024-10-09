@@ -47,10 +47,10 @@ if os.path.isfile(f"results/step_analysis/{name}.p"):
             axs[ei].plot(
                 x,
                 y,
-                label=f"True",
+                label="True",
             )
             axs[ei].plot(
-                np.arange(len(y_model)), y_model, label=f"Prediction", color="deeppink"
+                np.arange(len(y_model)), y_model, label="Prediction", color="deeppink"
             )
             axs[ei].set_yticks(range(len(e[0][-1]) + 1))
             axs[ei].set_ylim(0, len(e[0][-1]) + 1)

@@ -36,9 +36,9 @@ class Status(Execution):
             else:
                 status = ""
             label = ""
-            if hasattr(executable, 'label'):
+            if hasattr(executable, "label"):
                 label = executable.label()
-            label += " " + executable.load_attribute('label', '')
+            label += " " + executable.load_attribute("label", "")
             # if hasattr(executable, 'load_h5'):
             #     try:
             #         label = str(len(executable.load_h5()['epochs']))
@@ -47,10 +47,10 @@ class Status(Execution):
             #     except:
             #         pass
             state = "🆕" if not executable.is_committed() else "❌"
-            if executable.cached(): 
-                state = "✅" 
+            if executable.cached():
+                state = "✅"
             table.add_row(
-                state + " " + repr(executable).replace('interface.', ''),
+                state + " " + repr(executable).replace("interface.", ""),
                 status,
                 label,
                 str(

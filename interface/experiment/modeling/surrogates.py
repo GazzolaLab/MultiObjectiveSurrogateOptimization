@@ -1,13 +1,11 @@
-from machinable import Interface, get, Execution
+from machinable import Interface, get
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 import os
 from machinable.utils import object_hash
 from collections import defaultdict
 from sklearn.metrics import (
-    mean_absolute_error,
     median_absolute_error,
 )
 
@@ -50,20 +48,19 @@ def normalize_column(df, name):
 
 
 class Surrogates(Interface):
-
     def launch(self):
         for trial in range(1):
-            with get("machinable.scope", {"trial": trial}):
+            with get("machinable.scope", {"trial": trial, "dev": "v2"}):
                 for nm in [
                     "SCA",
-                    "IVY",
-                    "PVBC",
-                    "CCKBC",
-                    "AAC",
-                    "BS",
-                    "OLM",
-                    "NGFC",
-                    "IS",
+                    # "IVY",
+                    # "PVBC",
+                    # "CCKBC",
+                    # "AAC",
+                    # "BS",
+                    # "OLM",
+                    # "NGFC",
+                    # "IS",
                 ]:
                     protocol = [
                         "interface.sopt_modeling",
@@ -89,11 +86,16 @@ class Surrogates(Interface):
                             }
                         ],
                         # standalone
-                        ["~joint_model(mode='o')"],
+                        ["~joint_model(mode='o', save_weights='resnet_nonorm')"],
+                        [
+                            "~joint_model(mode='o', feasibility_solving=True, save_weights='resnet_nonorm')"
+                        ],
                         # with constraints
-                        ["~joint_model(mode='c+o')"],
+                        ["~joint_model(mode='c+o', save_weights='resnet_nonorm')"],
                         # with feasibility solving
-                        ["~joint_model(mode='c+o', feasibility_solving='f1 > 0.6')"],
+                        [
+                            "~joint_model(mode='c+o', feasibility_solving=True, save_weights='resnet_nonorm')"
+                        ],
                         # sensitivity
                         # ["~joint_model(mode='o', sensitivity=True)"],
                         # ["~joint_model(mode='c+o', sensitivity=True)"],
@@ -461,7 +463,6 @@ class Surrogates(Interface):
 
     def colormap_pie(self):
         from nds import ndomsort
-        from models.utils import EpsilonSort
         import matplotlib as mpl
         from matplotlib.lines import Line2D
 
@@ -471,7 +472,6 @@ class Surrogates(Interface):
         fig, axs = plt.subplots(3, 3, figsize=(25, 25))
 
         for ax, population in zip(axs.ravel(), populations):
-
             experiments = self.components.filter(lambda x: population in x.label())
 
             num_y = experiments[0].num_objectives
@@ -490,7 +490,9 @@ class Surrogates(Interface):
             for e, experiment in enumerate(experiments):
                 print(e + 1, "/", len(experiments))
                 pf = experiment.get_best(epsilon=None)["y"].to_numpy()
-                l = experiment.label().split("::")[
+                l = experiment.label().split(
+                    "::"
+                )[
                     -1
                 ]  # + str(experiment.config.dopt_params.get('surrogate_custom_training_kwargs', {}).get('outlier_threshold', '?'))
                 pf_sizes[l] = len(pf)
@@ -710,7 +712,6 @@ class Surrogates(Interface):
         fig, axs = plt.subplots(3, 3, figsize=(16, 12))
 
         for ax, population in zip(axs.ravel(), populations):
-
             experiments = self.components.filter(
                 lambda x: population in x.label() and x.cached()
             )

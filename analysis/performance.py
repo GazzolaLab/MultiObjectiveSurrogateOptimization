@@ -2,7 +2,6 @@
 import os
 from machinable import get, Component
 import pickle
-import numpy as np
 
 get("machinable.index", os.environ["STORAGE"]).__enter__()
 
@@ -98,11 +97,22 @@ matplotlib.rcParams.update(
 )
 
 fig = plt.figure(figsize=(6, 4))
-plt.plot([ppx for ppx in px], [ppy[0] for ppy in py], label="C(ours after 50k evaluations, baseline)")
+plt.plot(
+    [ppx for ppx in px],
+    [ppy[0] for ppy in py],
+    label="C(ours after 50k evaluations, baseline)",
+)
 
 plt.xlabel("Number of evaluations of the baseline")
 plt.ylabel("C(ours-50k, baseline)")
-plt.hlines(0.5, 0, 400000, linestyles="dashed", colors="green", label="C=0.5 (considered comparable)")
+plt.hlines(
+    0.5,
+    0,
+    400000,
+    linestyles="dashed",
+    colors="green",
+    label="C=0.5 (considered comparable)",
+)
 plt.vlines(
     50000,
     0,
@@ -135,5 +145,5 @@ plt.legend()
 
 
 fig.savefig("results/performance.pdf", bbox_inches="tight")
-#plt.show()
+# plt.show()
 # %%

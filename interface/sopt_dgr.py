@@ -1,4 +1,3 @@
-import os
 
 from interface.dmosopt import Dmosopt
 from typing import Dict

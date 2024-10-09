@@ -2,7 +2,6 @@ from interface.dmosopt import Dmosopt
 
 
 class Sopt(Dmosopt):
-
     @property
     def custom_training(self) -> bool:
         return (
@@ -59,11 +58,11 @@ class Sopt(Dmosopt):
 
     def get_model(self, name, **model_options):
         if "joint" in name:
-            if 'mlp' in name:
+            if "mlp" in name:
                 from models.mlp import MLP as Model
-            elif 'resnet' in name:
+            elif "resnet" in name:
                 from models.resnet import Resnet as Model
-            elif 'fttransformer' in name:
+            elif "fttransformer" in name:
                 from models.fttransformer import FTTransformer as Model
             else:
                 from models.transformer import Transformer as Model

@@ -3,7 +3,7 @@
 import os
 import pickle
 from machinable import get, Component
-from models.utils import split_data, constraint_map
+from models.utils import split_data
 
 get("machinable.index", os.environ["STORAGE"]).__enter__()
 

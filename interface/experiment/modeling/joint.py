@@ -1,8 +1,7 @@
-from machinable import Interface, get, Execution
+from machinable import Interface, get
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 from machinable.utils import object_hash
 
 
@@ -44,7 +43,6 @@ def normalize_column(df, name):
 
 
 class Joint(Interface):
-
     def launch(self):
         for trial in range(1):
             with get("machinable.scope", {"trial": trial, "cohort": "joint3"}):
@@ -457,7 +455,6 @@ class Joint(Interface):
 
     def colormap_pie(self):
         from nds import ndomsort
-        from models.utils import EpsilonSort
         import matplotlib as mpl
         from matplotlib.lines import Line2D
 
@@ -467,7 +464,6 @@ class Joint(Interface):
         fig, axs = plt.subplots(3, 3, figsize=(25, 25))
 
         for ax, population in zip(axs.ravel(), populations):
-
             experiments = self.components.filter(lambda x: population in x.label())
 
             num_y = experiments[0].num_objectives
@@ -486,7 +482,9 @@ class Joint(Interface):
             for e, experiment in enumerate(experiments):
                 print(e + 1, "/", len(experiments))
                 pf = experiment.get_best(epsilon=None)["y"].to_numpy()
-                l = experiment.label().split("::")[
+                l = experiment.label().split(
+                    "::"
+                )[
                     -1
                 ]  # + str(experiment.config.dopt_params.get('surrogate_custom_training_kwargs', {}).get('outlier_threshold', '?'))
                 pf_sizes[l] = len(pf)
@@ -610,7 +608,6 @@ class Joint(Interface):
         fig, axs = plt.subplots(3, 3, figsize=(16, 12))
 
         for ax, population in zip(axs.ravel(), populations):
-
             experiments = self.components.filter(
                 lambda x: population in x.label() and x.cached()
             )

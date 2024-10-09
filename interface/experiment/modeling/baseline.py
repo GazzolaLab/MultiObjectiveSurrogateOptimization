@@ -2,7 +2,6 @@ from machinable import Interface, get
 
 
 class Baseline(Interface):
-
     def launch(self):
         for trial in range(1):
             with get("machinable.scope", {"trial": trial}):

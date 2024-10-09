@@ -1,5 +1,4 @@
 import logging
-import os
 import sys
 from functools import partial
 
@@ -432,7 +431,7 @@ def obj_fun(exp_protocol, feature_dtypes, template_name, pp):
             tau_obj_value,
             fI_obj_value,
             mean_spike_amplitude_obj_value,
-            #ISI_adaptation_obj_value,
+            # ISI_adaptation_obj_value,
         ],
         dtype=np.float32,
     )

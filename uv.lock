@@ -1746,6 +1746,11 @@ dependencies = [
     { name = "uncertainties" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "dmosopt", git = "https://github.com/iraikov/dmosopt.git" },
@@ -1763,6 +1768,9 @@ requires-dist = [
     { name = "tensorflow-probability", specifier = "==0.24" },
     { name = "uncertainties", specifier = ">=3.2.2" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.6.9" }]
 
 [[package]]
 name = "namex"

@@ -582,7 +582,6 @@ class Model(tf.keras.Model):
         return self.min_mean_yR.numpy().tolist(), self.max_std_yR.numpy().tolist()
 
     def eval(self, X_test, y_test, per_feature=False, verbose=1):
-
         def normed(metric):
             def _w(y_true, y_pred, *args, **kwargs):
                 return metric(
@@ -939,7 +938,6 @@ class Columnwise:
         yC,
         verbose=2,
     ):
-
         for i, estimator in enumerate(self.estimators):
             e = estimator.autoeval(x, y[:, i : i + 1], yC, verbose=verbose)
 

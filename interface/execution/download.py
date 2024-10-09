@@ -48,7 +48,11 @@ class StorageDownload(Execution):
             table.add_row(
                 pb(len(found) > 0) + " " + repr(executable),
                 status,
-                executable.label(),
+                (
+                    executable.label()
+                    if hasattr(executable, "label")
+                    else repr(executable)
+                ),
                 executable.local_directory(),
             )
 

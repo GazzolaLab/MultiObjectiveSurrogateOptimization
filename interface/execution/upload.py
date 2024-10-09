@@ -58,14 +58,14 @@ class StorageUpload(Execution):
                 "Yes" if staged else "No",
                 executable.local_directory(),
             )
-            
+
             processed.add(executable.uuid)
 
         for e in self.executables:
             _push(e)
-            
+
         if int(self.config.related) > 0:
-            table.add_row('RELATED:', None, None, None)
+            table.add_row("RELATED:", None, None, None)
             for interface in inserts + updates:
                 for r in interface.related(deep=int(self.config.related) == 2).all():
                     _push(r)
