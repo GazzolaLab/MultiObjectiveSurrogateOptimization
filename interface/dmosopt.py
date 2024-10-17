@@ -13,8 +13,7 @@ import os
 import sys
 import inspect
 import h5py
-from dmosopt.MOASMO import get_best
-from models.utils import epsilon_get_best
+from dmosopt.MOASMO import get_best, epsilon_get_best
 from dmosopt import indicators
 import numpy as np
 import pandas as pd
@@ -622,15 +621,17 @@ class Dmosopt(Component):
             f = data["features"].to_numpy()[region][valid]
         else:
             f = None
+        epochs = data['epochs'][region][valid]
 
         if epsilon is not None or len(x) == 0:
             best_x, best_y, best_f, best_c, eps = epsilon_get_best(
                 x, y, f, C, epsilons=epsilon
             )
+            best_epoch = None
         else:
             # strict non-dominated sort
             best_x, best_y, best_f, best_c, best_epoch, perm = get_best(
-                x, y, f, C, None, None
+                x, y, f, C, None, None, epochs=epochs
             )
 
         if isinstance(sort_by, str):
@@ -641,6 +642,7 @@ class Dmosopt(Component):
                     "y": best_y,
                     "f": best_f,
                     "c": best_c,
+                    'epochs': best_epoch,
                     "np": np,
                 }
                 exec(f"reduced={sort_by}", context)
@@ -648,7 +650,7 @@ class Dmosopt(Component):
             else:
                 sort_by = None
 
-        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c}
+        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, 'epoch': best_epoch}
 
         # apply sort
         if sort_by is not None:
@@ -663,6 +665,8 @@ class Dmosopt(Component):
                 best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
             if best["c"] is not None:
                 best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
+            if best['epoch'] is not None:
+                best['epoch'] = pd.DataFrame(best['epoch'], columns=['epoch'])
 
         return best
 
