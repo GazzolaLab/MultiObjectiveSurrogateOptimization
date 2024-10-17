@@ -175,8 +175,7 @@ def joint(
             return cls(optimizer_cls(*args, **kwargs))
 
     model.stats = {
-        f"model_{k}": v.tolist() if isinstance(v, np.ndarray) else v
-        for k, v in scores.items()
+        f"model_{k}": np.mean(v) for k, v in scores.items()
     }
 
     if save_weights:

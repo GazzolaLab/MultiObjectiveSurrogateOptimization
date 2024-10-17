@@ -90,8 +90,8 @@ def apply_bounds(tensor, bounds):
 def acc(y_true, y_pred):
     return tf.reduce_mean(
         tf.cast(
-            tf.cast(y_pred > 0.5, dtype=tf.int32)
-            == tf.cast(y_true > 0.5, dtype=tf.int32),
+            tf.cast(tf.cast(y_pred, tf.float32) > 0.5, dtype=tf.int32)
+            == tf.cast(tf.cast(y_true, tf.float32) > 0.5, dtype=tf.int32),
             dtype=tf.float32,
         )
     )
