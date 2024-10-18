@@ -884,7 +884,7 @@ class Dmosopt(Component):
             ] + [
                 (
                     (
-                        (self.num_initial_samples + (self.num_evals_per_epoch * e))
+                        int(self.num_initial_samples + (self.num_evals_per_epoch * e))
                         if not from_zero
                         else 0
                     ),
@@ -897,7 +897,7 @@ class Dmosopt(Component):
         change_indices = np.where(np.diff(epoch_array) != 0)[0] + 1
         all_indices = np.concatenate(([0], change_indices, [len(epoch_array)]))
         return [
-            (all_indices[i] if not from_zero else 0, all_indices[i + 1])
+            (int(all_indices[i]) if not from_zero else 0, int(all_indices[i + 1]))
             for i in range(len(all_indices) - 1)
         ]
 
