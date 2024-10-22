@@ -9,17 +9,15 @@ dependencies = [
     "dmosopt @ git+https://github.com/iraikov/dmosopt.git",
     "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator",
     "machinable>=4.10.3",
-    "tensorflow==2.16.2",
-    "tensorflow-probability==0.24",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
     "pandas>=2.2.2",
     "rich>=13.8.0",
-    "pysqlite3-binary>=0.5.3.post1",
     "uncertainties>=3.2.2",
     "globus-sdk>=3.44.0",
     "nds @ git+https://github.com/KernelA/nds-py.git",
     "jupyter>=1.1.1",
+    "pysqlite3",
 ]
 readme = "README.md"
 requires-python = ">= 3.9"
@@ -32,6 +30,9 @@ build-backend = "hatchling.build"
 dev-dependencies = [
     "ruff>=0.6.9",
 ]
+
+[tool.uv.sources]
+pysqlite3 = { git = "https://github.com/coleifer/pysqlite3.git" }
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -2,7 +2,19 @@
 
 ## Getting started
 
-Create a virtualenv and `pip install -r requirements.txt`.
+Install [uv](https://docs.astral.sh/uv) and `uv sync`.
+
+To use the surrogate models, you also need to install:
+
+```
+tensorflow==2.16.2
+tensorflow-probability==0.24
+```
+and
+```
+torch
+gpytorch
+```
 
 This project uses [machinable](https://machinable.org/); check out the [interface](./interface/) module to learn about available [CLI](https://machinable.org/guide/cli.html) options. 
 
