@@ -5,7 +5,7 @@ import json
 
 class MultiObjectiveSurrogateOptimization(Project):
     def on_resolve_element(self, module):
-        if module == "interface.execution.frontera":
+        if module == "interface.execution.tacc":
             m, c = super().on_resolve_element("interface.execution.slurm")
             return [
                 m,

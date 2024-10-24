@@ -13,14 +13,13 @@ class Modeling(Sopt):
         dopt_params: Dict = Field(
             default_factory=lambda: {
                 "opt_id": "default",
-                "feature_dtypes": "benchmarks.modeling.objective.feature_dtypes",
                 "optimizer_name": "nsga2",
                 "initial_method": "mc",
-                "n_initial": 50,
+                "n_initial": 100,
                 "initial_maxiter": 10,
                 "n_epochs": 10,
-                "population_size": 300,
-                "num_generations": 30,
+                "population_size": 100,
+                "num_generations": 10,
                 "termination_conditions": True,
                 "resample_fraction": 1.0,
                 "surrogate_method_name": None,
