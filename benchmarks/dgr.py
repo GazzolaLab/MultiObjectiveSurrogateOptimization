@@ -475,6 +475,18 @@ class DGRate(object):
 
         return freqs, psd, peak_index
 
+    def compute_spectrogram(self, x, window_size=1024, frequency_range=(0, 100.), overlap=0.5):
+
+        Fs = 1. / self.pars["dt"]
+        
+        nperseg    = window_size
+        win        = signal.get_window('hann', nperseg)
+        noverlap   = int(overlap * nperseg)
+        
+        f, t, sxx = signal.spectrogram(x=x, fs=Fs, window=win, noverlap=noverlap, mode="psd")
+
+        return f, t, sxx
+
     def _test_integration_method_equivalence(self, params=None, region=None):
         if params is None:
             params = self.parameters()
