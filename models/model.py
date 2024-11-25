@@ -417,7 +417,7 @@ class Model(tf.keras.Model):
         self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="time_series"
     ):
         if x.shape[0] < n_splits * 2:
-            return 1
+            return [1]
 
         x, y, yC = self.preprocess(x, y, yC)
 
@@ -427,6 +427,9 @@ class Model(tf.keras.Model):
                 feasible = feasible.ravel()
                 x = x[feasible, :]
                 y = y[feasible, :]
+            
+        if x.shape[0] < n_splits * 2:
+            return [1]
 
         kf = {"kfold": KFold, "time_series": TimeSeriesSplit}[cv](n_splits=n_splits)
         stopped_after_epochs = []

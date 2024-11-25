@@ -202,7 +202,7 @@ def dynamic_sampling(
     samples_per_iteration=25,
     max_samples=500,
     stop_condition="convergence_condition",
-    convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)",
+    convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1",
     mode="c+o",
     optimizer_sampling=None,
     feasibility_solving=False,
@@ -265,9 +265,9 @@ def dynamic_sampling(
 
     # check if all constraints are equal
     #  this may happen at the beginning and will make
-    if constraint_unique_samples < 5 or constraint_equal_ratio > 0.1:
+    if constraint_unique_samples < 50 or constraint_equal_ratio > 0.2:
         if verbose > 0:
-            print("Most or all constraint samples are equal")
+            print(f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})")
 
         if "!" in mode:
             if mode.replace("!", "") == "c":
