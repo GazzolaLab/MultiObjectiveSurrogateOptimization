@@ -1,9 +1,7 @@
-from models.resnet import Resnet
 import numpy as np
 from machinable.utils import save_file
 import os
 import dmosopt.MOASMO as opt
-import tensorflow as tf
 from pprint import pprint
 
 
@@ -56,6 +54,7 @@ def joint(
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
     """
+    import tensorflow as tf
 
     tf.keras.backend.clear_session()
 
@@ -107,6 +106,8 @@ def joint(
 
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
+
+    from models.resnet import Resnet
 
     model = _Model(
         Resnet(
@@ -174,9 +175,7 @@ def joint(
         def wrapped(cls, *args, **kwargs):
             return cls(optimizer_cls(*args, **kwargs))
 
-    model.stats = {
-        f"model_{k}": np.mean(v) for k, v in scores.items()
-    }
+    model.stats = {f"model_{k}": np.mean(v) for k, v in scores.items()}
 
     if save_weights:
         model.save_weights(
@@ -267,7 +266,9 @@ def dynamic_sampling(
     #  this may happen at the beginning and will make
     if constraint_unique_samples < 50 or constraint_equal_ratio > 0.2:
         if verbose > 0:
-            print(f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})")
+            print(
+                f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})"
+            )
 
         if "!" in mode:
             if mode.replace("!", "") == "c":
@@ -282,6 +283,8 @@ def dynamic_sampling(
             if verbose > 0:
                 print(f"Using o-mode (overriding {mode}-mode)")
             mode = "o"
+
+    from models.resnet import Resnet
 
     model = Resnet(
         num_parameters=x_completed.shape[1],
