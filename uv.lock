@@ -1514,7 +1514,7 @@ wheels = [
 
 [[package]]
 name = "machinable"
-version = "4.10.5"
+version = "4.10.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "arrow" },
@@ -1526,9 +1526,9 @@ dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
     { name = "uuid7" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/6f/488f5ffe3f77a0040064ef521895d82dc5711130457f23b17141e2186cce/machinable-4.10.5.tar.gz", hash = "sha256:d3f01860582baee1bad6685424a4b29838571e4f06d00c5adde1120a9b14de61", size = 45371 }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/bb/55a49920d9b28d6c43c02663fd1a769c33aa3a77a66b17f0f198b83b5a8d/machinable-4.10.6.tar.gz", hash = "sha256:1e109994bc2bb98aff6190eea39430c97982e8381e79451336dba3162ef4a15c", size = 45419 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/2e/2f3c9f85d307204af929fbbe279a0847def3acc0213da2ec6b54dd7cb853/machinable-4.10.5-py3-none-any.whl", hash = "sha256:3075a73739fc819466062b0aae601fec5335c043b390cfd56a130e25b1fd1cfd", size = 53161 },
+    { url = "https://files.pythonhosted.org/packages/e8/19/cbc9602ffc73fee840d3b19a6e056214ef08a0b95964b06e8846f0811fa0/machinable-4.10.6-py3-none-any.whl", hash = "sha256:8c7ab3ce0123b03f23386dd6a1d8b0356abe4c4d2d3957506744dddfa83717fb", size = 53258 },
 ]
 
 [[package]]
@@ -1796,6 +1796,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pysqlite3-binary" },
     { name = "rich" },
+    { name = "scienceplots" },
     { name = "seaborn" },
     { name = "tensorflow" },
     { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_system == 'Darwin'" },
@@ -1814,7 +1815,7 @@ requires-dist = [
     { name = "globus-sdk", specifier = ">=3.44.0" },
     { name = "gpytorch", specifier = ">=1.13" },
     { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "machinable", specifier = "==4.10.5" },
+    { name = "machinable", specifier = "==4.10.6" },
     { name = "matplotlib", specifier = ">=3.9.2" },
     { name = "miv-simulator", git = "https://github.com/GazzolaLab/MiV-Simulator" },
     { name = "nds", git = "https://github.com/KernelA/nds-py.git" },
@@ -1822,6 +1823,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.2" },
     { name = "pysqlite3-binary", specifier = ">=0.5.4" },
     { name = "rich", specifier = ">=13.8.0" },
+    { name = "scienceplots", specifier = ">=2.1.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tensorflow", specifier = "==2.16.2" },
     { name = "torch", marker = "platform_system != 'Darwin'", specifier = ">=2.5.1", index = "https://download.pytorch.org/whl/cpu" },
@@ -2982,6 +2984,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/03/20/401132c0908e8837625e3b7e32df9962e7cd681a4df1e16a10e2a5b4ecda/ruff-0.8.0-py3-none-win32.whl", hash = "sha256:5fdb6efecc3eb60bba5819679466471fd7d13c53487df7248d6e27146e985468", size = 8783511 },
     { url = "https://files.pythonhosted.org/packages/1d/5c/4d800fca7854f62ad77f2c0d99b4b585f03e2d87a6ec1ecea85543a14a3c/ruff-0.8.0-py3-none-win_amd64.whl", hash = "sha256:582891c57b96228d146725975fbb942e1f30a0c4ba19722e692ca3eb25cc9b4f", size = 9559876 },
     { url = "https://files.pythonhosted.org/packages/5b/bc/cc8a6a5ca4960b226dc15dd8fb511dd11f2014ff89d325c0b9b9faa9871f/ruff-0.8.0-py3-none-win_arm64.whl", hash = "sha256:ba93e6294e9a737cd726b74b09a6972e36bb511f9a102f1d9a7e1ce94dd206a6", size = 8939733 },
+]
+
+[[package]]
+name = "scienceplots"
+version = "2.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/04/aff33daa212cf6dd5427999062aab0289976dd1b0b842752e81ab17aef66/SciencePlots-2.1.1.tar.gz", hash = "sha256:d8d197e3410f87ebdad0b9c265eaab596094fb082d97123e835f6bc32800ab54", size = 10757 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/2a/debffdd7061c7a65ab46c51e671b895dc8231c4a14950849c40699eb2070/SciencePlots-2.1.1-py3-none-any.whl", hash = "sha256:2e64d2e93b4f98702f30145dbb70d238f5dc315e227fec331489631232dfc9e0", size = 16472 },
 ]
 
 [[package]]

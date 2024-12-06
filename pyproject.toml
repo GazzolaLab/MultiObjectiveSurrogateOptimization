@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "dmosopt @ git+https://github.com/iraikov/dmosopt.git",
     "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator",
-    "machinable==4.10.5",
+    "machinable==4.10.6",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
     "pandas>=2.2.2",
@@ -22,6 +22,7 @@ dependencies = [
     "tensorflow==2.16.2",
     "gpytorch>=1.13",
     "pysqlite3-binary>=0.5.4",
+    "scienceplots>=2.1.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.9"

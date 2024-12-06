@@ -621,7 +621,7 @@ class Dmosopt(Component):
             f = data["features"].to_numpy()[region][valid]
         else:
             f = None
-        epochs = data['epochs'][region][valid]
+        epochs = data["epochs"][region][valid]
 
         if epsilon is not None or len(x) == 0:
             best_x, best_y, best_f, best_c, eps = epsilon_get_best(
@@ -642,7 +642,7 @@ class Dmosopt(Component):
                     "y": best_y,
                     "f": best_f,
                     "c": best_c,
-                    'epochs': best_epoch,
+                    "epochs": best_epoch,
                     "np": np,
                 }
                 exec(f"reduced={sort_by}", context)
@@ -650,7 +650,7 @@ class Dmosopt(Component):
             else:
                 sort_by = None
 
-        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, 'epoch': best_epoch}
+        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
 
         # apply sort
         if sort_by is not None:
@@ -665,8 +665,8 @@ class Dmosopt(Component):
                 best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
             if best["c"] is not None:
                 best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
-            if best['epoch'] is not None:
-                best['epoch'] = pd.DataFrame(best['epoch'], columns=['epoch'])
+            if best["epoch"] is not None:
+                best["epoch"] = pd.DataFrame(best["epoch"], columns=["epoch"])
 
         return best
 
@@ -690,7 +690,7 @@ class Dmosopt(Component):
         else:
             fmin, fmax = np.array(min_max[0]), np.array(min_max[1])
 
-        return (pf - fmin) / (fmax - fmin)
+        return (pf - fmin) / (fmax - fmin + 1e-8)
 
     def igd(self, ref_front, pf=None):
         ref_front, pf = self.front(ref_front), self.front(pf)
