@@ -14,19 +14,19 @@ class _Ca1Sopt(Interface):
         from models.ops import import_initial_samples
 
         for nm in self.populations():
-            with get("machinable.scope", {"trial": 0}):
-                initial = get(
-                    "interface.sopt_modeling",
-                    [
-                        f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_{nm}.yaml")""",
-                        {
-                            "dopt_params.surrogate_method_name": "gpr",
-                        },
-                    ],
-                )
-                assert initial.cached()
             for trial in range(5):
                 with get("machinable.scope", {"trial": trial}):
+                    initial = get(
+                        "interface.sopt_modeling",
+                        [
+                            f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_{nm}.yaml")""",
+                            {
+                                "dopt_params.surrogate_method_name": "gpr",
+                            },
+                        ],
+                    )
+                    assert initial.cached()
+
                     for version in [
                         {
                             "dopt_params.surrogate_method_name": "gpr",
