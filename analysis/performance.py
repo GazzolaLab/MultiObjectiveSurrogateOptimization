@@ -82,56 +82,70 @@ else:
 # %%
 
 import matplotlib.pyplot as plt
-import matplotlib
+import scienceplots
 
-matplotlib.use("pgf")
-matplotlib.rcParams.update(
-    {
-        # Adjust to your LaTex-Engine
-        "pgf.texsystem": "pdflatex",
-        "font.family": "serif",
-        "text.usetex": True,
-        "pgf.rcfonts": False,
-        "axes.unicode_minus": False,
-    }
-)
 
-fig = plt.figure(figsize=(6, 4))
+plt.style.use(["science", "ieee"])
+# matplotlib.use("pgf")
+# matplotlib.rcParams.update(
+#     {
+#         # Adjust to your LaTex-Engine
+#         "pgf.texsystem": "pdflatex",
+#         "font.family": "serif",
+#         "text.usetex": True,
+#         "pgf.rcfonts": False,
+#         "axes.unicode_minus": False,
+#     }
+# )
+
+fig = plt.figure(figsize=(3, 2))
+import numpy as np
+
+x = np.array([ppx for ppx in px])
+y = np.array([ppy[0] for ppy in py])
+
+y[x < 50000] = np.nan
+
+x -= 50000
+
+# x = x[y > 0.2]
+# y = y[y > 0.2]
+
 plt.plot(
-    [ppx for ppx in px],
-    [ppy[0] for ppy in py],
-    label="C(ours after 50k evaluations, baseline)",
+    x,
+    y,
+    label="Surrogate vs. baseline",
 )
 
-plt.xlabel("Number of evaluations of the baseline")
-plt.ylabel("C(ours-50k, baseline)")
+plt.xlabel("Number of additional expensive evaluations")
+plt.ylabel("C-metric (pareto-dominance)")
 plt.hlines(
     0.5,
     0,
     400000,
     linestyles="dashed",
     colors="green",
-    label="C=0.5 (considered comparable)",
+    label="Comparable solution",
 )
-plt.vlines(
-    50000,
-    0,
-    1,
-    linestyles="dashed",
-    colors="orange",
-    label="Comparison point (50k evaluations of ours)",
-)
-plt.arrow(
-    50000,
-    0.53,
-    130000,
-    0.0,
-    head_width=0.1,
-    head_length=0.05,
-    fc="r",
-    ec="r",
-    label="Saved evaluations (3.6x)",
-)
+# plt.vlines(
+#     50000,
+#     0,
+#     1,
+#     linestyles="dashed",
+#     colors="orange",
+#     label="Comparison point (50k evaluations of ours)",
+# )
+# plt.arrow(
+#     50000,
+#     0.53,
+#     130000,
+#     0.0,
+#     head_width=0.1,
+#     head_length=0.05,
+#     fc="r",
+#     ec="r",
+#     label="Saved evaluations (3.6x)",
+# )
 # plt.vlines(
 #     350000,
 #     0,
@@ -140,10 +154,11 @@ plt.arrow(
 #     colors="red",
 #     label="50k evaluations (ours)",
 # )
-plt.xlim(0, 355000)
+plt.xlim(0, 200e3)
+plt.ylim(0.4, 1)
 plt.legend()
 
 
-fig.savefig("results/performance.pdf", bbox_inches="tight")
+# fig.savefig("/home/frithjof/Sync/perf.svg", bbox_inches="tight")
 # plt.show()
 # %%
