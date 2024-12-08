@@ -710,6 +710,13 @@ class Dmosopt(Component):
 
         return indicator.do(np.array(pf))
 
+    def norm_hv(self, nadir, pf=None):
+        return self.hypervolume(
+            ref_point=[1.1] * len(nadir),
+            pf=pf,
+            normalize=[[0.0] * len(nadir), nadir],
+        )
+
     def c_metric(self, ref_front, pf=None):
         """
         Calculates the set coverage of A over B, i.e. C(A, B),

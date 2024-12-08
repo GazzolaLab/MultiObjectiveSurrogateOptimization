@@ -26,6 +26,7 @@ class _Ca1Sopt(Interface):
                             },
                         ],
                     ).launch()
+                    initial.save_attribute("preflight", True)
                     if initial.cached():
                         for version in [
                             {
