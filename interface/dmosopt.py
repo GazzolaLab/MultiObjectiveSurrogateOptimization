@@ -247,24 +247,29 @@ class Dmosopt(Component):
                     fi = fi(self)
 
     def __call__(self) -> None:
-        params = to_dict(self.config.dopt_params)
-        if "file_path" not in params:
-            params["file_path"] = self.output_filepath
-        if "local_random" not in params and "random_seed" not in params:
-            params["random_seed"] = self.seed
-        for f in [
-            "feature_dtypes",
-            "objective_names",
-            "constraint_names",
-            "metadata",
-        ]:
-            # users may specify these fields in terms of importable objects
-            #  to avoid repetition or use custom types
-            if f in params and isinstance(params[f], str):
-                fi = config.import_object_by_path(params[f])
-                if callable(fi):
-                    fi = fi(self)
-                params[f] = fi
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            params = to_dict(self.config.dopt_params)
+            if "file_path" not in params:
+                params["file_path"] = self.output_filepath
+            if "local_random" not in params and "random_seed" not in params:
+                params["random_seed"] = self.seed
+            for f in [
+                "feature_dtypes",
+                "objective_names",
+                "constraint_names",
+                "metadata",
+            ]:
+                # users may specify these fields in terms of importable objects
+                #  to avoid repetition or use custom types
+                if f in params and isinstance(params[f], str):
+                    fi = config.import_object_by_path(params[f])
+                    if callable(fi):
+                        fi = fi(self)
+                    params[f] = fi
+            params = MPI.COMM_WORLD.bcast(params, root=0)
+        else:
+            params = MPI.COMM_WORLD.bcast(None, root=0)
+
         run = dmosopt.run(
             dopt_params=params,
             time_limit=self.config.time_limit,
@@ -281,6 +286,9 @@ class Dmosopt(Component):
             verbose=self.config.verbose,
             worker_debug=self.config.worker_debug,
         )
+
+        if MPI.COMM_WORLD.Get_rank() > 0:
+            return
 
         try:
             self.save_file("run.p", run)
