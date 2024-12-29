@@ -6,8 +6,8 @@ authors = [
     { name = "Frithjof Gressmann", email = "fg14@illinois.edu" }
 ]
 dependencies = [
-    "dmosopt @ git+https://github.com/iraikov/dmosopt.git",
-    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator",
+    "dmosopt @ git+https://github.com/iraikov/dmosopt.git@d71930b",
+    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@a17dcb5",
     "machinable==4.10.6",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
@@ -23,6 +23,9 @@ dependencies = [
     "gpytorch>=1.13",
     "scienceplots>=2.1.1",
     "tabulate>=0.9.0",
+    "sqlean-py>=3.47.0",
+    "jaxtyping>=0.2.19",
+    "cleosim>=0.15.0",
 ]
 readme = "README.md"
 requires-python = ">= 3.9"
