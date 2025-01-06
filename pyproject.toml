@@ -7,7 +7,7 @@ authors = [
 ]
 dependencies = [
     "dmosopt @ git+https://github.com/iraikov/dmosopt.git@d71930b",
-    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@a17dcb5",
+    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@82cac9d",
     "machinable==4.10.6",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
