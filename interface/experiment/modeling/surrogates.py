@@ -5,9 +5,6 @@ import pandas as pd
 import os
 from machinable.utils import object_hash
 from collections import defaultdict
-from sklearn.metrics import (
-    median_absolute_error,
-)
 
 
 def trial_reduction(df):
@@ -49,18 +46,18 @@ def normalize_column(df, name):
 
 class Surrogates(Interface):
     def launch(self):
-        for trial in range(1):
-            with get("machinable.scope", {"trial": trial, "dev": "v2"}):
+        for trial in range(3):
+            with get("machinable.scope", {"trial": trial}):
                 for nm in [
                     "SCA",
-                    # "IVY",
-                    # "PVBC",
-                    # "CCKBC",
-                    # "AAC",
-                    # "BS",
-                    # "OLM",
-                    # "NGFC",
-                    # "IS",
+                    "IVY",
+                    "PVBC",
+                    "CCKBC",
+                    "AAC",
+                    "BS",
+                    "OLM",
+                    "NGFC",
+                    "IS",
                 ]:
                     protocol = [
                         "interface.sopt_modeling",
@@ -86,16 +83,16 @@ class Surrogates(Interface):
                             }
                         ],
                         # standalone
-                        ["~joint_model(mode='o', save_weights='resnet_nonorm')"],
-                        [
-                            "~joint_model(mode='o', feasibility_solving=True, save_weights='resnet_nonorm')"
-                        ],
+                        ["~joint_model(mode='o')"],
+                        # [
+                        #    "~joint_model(mode='o', feasibility_solving=True, save_weights='resnet_nonorm')"
+                        # ],
                         # with constraints
-                        ["~joint_model(mode='c+o', save_weights='resnet_nonorm')"],
+                        ["~joint_model(mode='c+o')"],
                         # with feasibility solving
-                        [
-                            "~joint_model(mode='c+o', feasibility_solving=True, save_weights='resnet_nonorm')"
-                        ],
+                        # [
+                        #    "~joint_model(mode='c+o', feasibility_solving=True, save_weights='resnet_nonorm')"
+                        # ],
                         # sensitivity
                         # ["~joint_model(mode='o', sensitivity=True)"],
                         # ["~joint_model(mode='c+o', sensitivity=True)"],

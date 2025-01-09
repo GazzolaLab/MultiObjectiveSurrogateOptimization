@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 from interface.sopt import Sopt
 from pydantic import Field
+from miv_simulator.env import Env
 from miv_simulator.optimization import optimization_params
 from miv_simulator.utils import from_yaml
 import datetime
@@ -20,7 +21,7 @@ class Culture(Sopt):
                 },
                 "reduce_fun_name": "miv_simulator.optimize_network.compute_objectives",
                 "problem_parameters": {},
-                "feature_dtypes": "benchmarks.net.feature_dtypes",
+                "feature_dtypes": "benchmarks.culture.feature_dtypes",
             }
         )
         spawn_startup_wait: Optional[int] = 3
@@ -28,8 +29,6 @@ class Culture(Sopt):
     def version_from_protocol(
         self, filepath: str, nprocs_per_worker: int, **network_config
     ):
-        from miv_simulator.env import Env
-
         run_ts = datetime.datetime.today().strftime("%Y%m%d_%H%M")
 
         operational_config = from_yaml(filepath)
@@ -88,22 +87,40 @@ class Culture(Sopt):
             "nprocs_per_worker": nprocs_per_worker,
         }
 
-    def version_imperative(
+    def version_from_config(
         self,
         filepath: str,
         target_populations: Optional[list[str]] = None,
         objective_names: Optional[list[str]] = None,
+        nprocs_per_worker: int = 9,
         key: str = "Weight all",
     ):
-        # TODO: importable callable
+        run_ts = datetime.datetime.today().strftime("%Y%m%d_%H%M")
 
-        protocol_config_dict = from_yaml(filepath)
-        protocol_config_dict["synaptic"] = protocol_config_dict.pop(
-            "Synaptic Optimization"
-        )
+        operational_config = {}
+        operational_config["run_ts"] = run_ts
+        operational_config["nprocs_per_worker"] = nprocs_per_worker
+
+        network_config = {
+            "config": filepath,
+            "tstop": 1250,
+            "checkpoint_interval": 0,
+            "v_init": -77.0,
+            "dt": 0.025,
+            "cleanup": False,
+            "verbose": False,
+            "cache_queries": True,
+            "output_results": False,
+            "use_coreneuron": False,
+        }
+        env = Env(**network_config)
+
+        opt_params = env.netclamp_config.optimize_parameters
 
         if target_populations is None:
-            target_populations = list(protocol_config_dict["synaptic"].keys())
+            target_populations = list(opt_params["synaptic"].keys())
+
+        operational_config["target_populations"] = target_populations
 
         if objective_names is None:
             objective_names = [
@@ -112,8 +129,10 @@ class Culture(Sopt):
                 for field in ["firing rate", "fraction active"]
             ]
 
+        operational_config["objective_names"] = objective_names
+
         opt_param_config = optimization_params(
-            protocol_config_dict,
+            opt_params,
             target_populations,
             key,
         )
@@ -121,6 +140,7 @@ class Culture(Sopt):
         opt_targets = opt_param_config.opt_targets
         param_names = opt_param_config.param_names
         param_tuples = opt_param_config.param_tuples
+
         hyperprm_space = {
             param_pattern: [param_tuple.param_range[0], param_tuple.param_range[1]]
             for param_pattern, param_tuple in zip(param_names, param_tuples)
@@ -134,28 +154,21 @@ class Culture(Sopt):
                     f"{target_pop_name} positive rate"
                     for target_pop_name in target_populations
                 ],
-                "reduce_fun_args": (),
-                "obj_fun_init_name": "benchmarks.net.init_network_objfun",
+                "reduce_fun_args": (operational_config, opt_targets),
+                "controller_init_fun_args": {
+                    "subworld_size": nprocs_per_worker,
+                },
                 "obj_fun_init_args": {
-                    "cells": "???",
-                    "connections": "???",
-                    "cell_types": "???",
-                    "synapses": "???",
-                    "mechanisms": "???",
-                    "templates": "???",
-                    "dt": 0.025,
-                    "v_init": -77.0,
-                    "t_stop": 55.0,
-                    "use_coreneuron": "${..controller_init_fun_args.use_coreneuron}",
-                    "objective_names": "${..objective_names}",
+                    "operational_config": operational_config,
                     "opt_targets": opt_targets,
                     "param_tuples": [
                         param_tuple._asdict() for param_tuple in param_tuples
                     ],
                     "param_names": param_names,
-                    "target_populations": target_populations,
+                    **network_config,
                 },
-            }
+            },
+            "nprocs_per_worker": nprocs_per_worker,
         }
 
     def compute_context(self):

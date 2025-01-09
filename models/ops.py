@@ -1,9 +1,7 @@
-from models.resnet import Resnet
 import numpy as np
 from machinable.utils import save_file
 import os
 import dmosopt.MOASMO as opt
-import tensorflow as tf
 from pprint import pprint
 
 
@@ -56,6 +54,7 @@ def joint(
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
     """
+    import tensorflow as tf
 
     tf.keras.backend.clear_session()
 
@@ -107,6 +106,8 @@ def joint(
 
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
+
+    from models.resnet import Resnet
 
     model = _Model(
         Resnet(
@@ -174,9 +175,7 @@ def joint(
         def wrapped(cls, *args, **kwargs):
             return cls(optimizer_cls(*args, **kwargs))
 
-    model.stats = {
-        f"model_{k}": np.mean(v) for k, v in scores.items()
-    }
+    model.stats = {f"model_{k}": np.mean(v) for k, v in scores.items()}
 
     if save_weights:
         model.save_weights(
@@ -202,7 +201,7 @@ def dynamic_sampling(
     samples_per_iteration=25,
     max_samples=500,
     stop_condition="convergence_condition",
-    convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1)",
+    convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1",
     mode="c+o",
     optimizer_sampling=None,
     feasibility_solving=False,
@@ -265,9 +264,11 @@ def dynamic_sampling(
 
     # check if all constraints are equal
     #  this may happen at the beginning and will make
-    if constraint_unique_samples < 5 or constraint_equal_ratio > 0.1:
+    if constraint_unique_samples < 50 or constraint_equal_ratio > 0.2:
         if verbose > 0:
-            print("Most or all constraint samples are equal")
+            print(
+                f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})"
+            )
 
         if "!" in mode:
             if mode.replace("!", "") == "c":
@@ -282,6 +283,8 @@ def dynamic_sampling(
             if verbose > 0:
                 print(f"Using o-mode (overriding {mode}-mode)")
             mode = "o"
+
+    from models.resnet import Resnet
 
     model = Resnet(
         num_parameters=x_completed.shape[1],
@@ -427,3 +430,97 @@ def dynamic_sampling(
         pprint(candidate_samples[:5] - x_transformed[:5])
 
     return x_transformed
+
+
+def import_initial_samples(
+    file_path,
+    source,
+    num,
+    opt_id=None,
+    source_opt_id=None,
+    feature_dtypes=None,
+    param_names=None,
+):
+    from dmosopt.dmosopt import save_to_h5, init_from_h5, init_h5
+    from dmosopt.datatypes import ParamSpec
+    import h5py
+
+    if opt_id is None:
+        with h5py.File(file_path, "r") as f:
+            opt_id = list(f.keys())[0]
+
+    if source_opt_id is None:
+        with h5py.File(source, "r") as f:
+            source_opt_id = list(f.keys())[0]
+
+    (
+        random_seed,
+        max_epoch,
+        old_evals,
+        params,
+        is_int,
+        lo_bounds,
+        hi_bounds,
+        objective_names,
+        feature_names,
+        constraint_names,
+        problem_parameters,
+        problem_ids,
+    ) = init_from_h5(source, param_names=param_names, opt_id=source_opt_id)
+
+    spec = ParamSpec(
+        bound1=np.asarray(lo_bounds),
+        bound2=np.asarray(hi_bounds),
+        is_integer=is_int,
+    )
+    feature_names = None
+    if feature_dtypes is not None:
+        feature_names = [dt[0] for dt in feature_dtypes]
+
+    init_h5(
+        opt_id=opt_id,
+        problem_ids=list(old_evals.keys()),
+        has_problem_ids=True,
+        spec=spec,
+        param_names=param_names,
+        objective_names=objective_names,
+        feature_dtypes=feature_dtypes,
+        constraint_names=constraint_names,
+        problem_parameters=problem_parameters,
+        metadata=None,
+        random_seed=random_seed,
+        fpath=file_path,
+    )
+
+    save_to_h5(
+        opt_id=opt_id,
+        problem_ids=list(old_evals.keys()),
+        has_problem_ids=True,
+        param_names=param_names,
+        objective_names=objective_names,
+        feature_names=feature_names,
+        constraint_names=constraint_names,
+        spec=spec,
+        evals={
+            k: (
+                [
+                    getattr(e, field) if field != "features" else [getattr(e, field)]
+                    for e in v[:num]
+                ]
+                for field in (
+                    "epoch",
+                    "parameters",
+                    "objectives",
+                    "features",
+                    "constraints",
+                    "prediction",
+                )
+            )
+            for k, v in old_evals.items()
+        },
+        problem_parameters=problem_parameters,
+        metadata=None,
+        random_seed=random_seed,
+        fpath=file_path,
+        logger=None,
+    )

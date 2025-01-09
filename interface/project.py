@@ -9,7 +9,7 @@ class MultiObjectiveSurrogateOptimization(Project):
             m, c = super().on_resolve_element("interface.execution.slurm")
             return [
                 m,
-                {"mpi": "ibrun"},
+                {"mpi": "ibrun", "preamble": "\nsleep $((RANDOM % 300))\n"},
             ], c
 
         if module == "interface.storage.globus":

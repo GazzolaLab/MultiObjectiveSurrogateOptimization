@@ -1,6 +1,7 @@
 from sklearn.linear_model import LinearRegression
 import numpy as np
 
+
 class LR:
     def __init__(
         self,
@@ -12,6 +13,8 @@ class LR:
         xub,
         seed=None,
         logger=None,
+        *args,
+        **kwargs,
     ):
         self.xin = xin
         self.yin = yin
@@ -21,7 +24,7 @@ class LR:
         self.xub = xub
         self.seed = seed
         self.logger = logger
-        
+
         # filter NaNs
         valid_indices = ~np.isnan(yin).any(axis=1)
         self.xin = xin[valid_indices]
@@ -38,4 +41,3 @@ class LR:
     def evaluate(self, x):
         mean, var = self.predict(x)
         return mean
-    

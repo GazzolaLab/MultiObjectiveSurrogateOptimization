@@ -247,24 +247,29 @@ class Dmosopt(Component):
                     fi = fi(self)
 
     def __call__(self) -> None:
-        params = to_dict(self.config.dopt_params)
-        if "file_path" not in params:
-            params["file_path"] = self.output_filepath
-        if "local_random" not in params and "random_seed" not in params:
-            params["random_seed"] = self.seed
-        for f in [
-            "feature_dtypes",
-            "objective_names",
-            "constraint_names",
-            "metadata",
-        ]:
-            # users may specify these fields in terms of importable objects
-            #  to avoid repetition or use custom types
-            if f in params and isinstance(params[f], str):
-                fi = config.import_object_by_path(params[f])
-                if callable(fi):
-                    fi = fi(self)
-                params[f] = fi
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            params = to_dict(self.config.dopt_params)
+            if "file_path" not in params:
+                params["file_path"] = self.output_filepath
+            if "local_random" not in params and "random_seed" not in params:
+                params["random_seed"] = self.seed
+            for f in [
+                "feature_dtypes",
+                "objective_names",
+                "constraint_names",
+                "metadata",
+            ]:
+                # users may specify these fields in terms of importable objects
+                #  to avoid repetition or use custom types
+                if f in params and isinstance(params[f], str):
+                    fi = config.import_object_by_path(params[f])
+                    if callable(fi):
+                        fi = fi(self)
+                    params[f] = fi
+            params = MPI.COMM_WORLD.bcast(params, root=0)
+        else:
+            params = MPI.COMM_WORLD.bcast(None, root=0)
+
         run = dmosopt.run(
             dopt_params=params,
             time_limit=self.config.time_limit,
@@ -281,6 +286,9 @@ class Dmosopt(Component):
             verbose=self.config.verbose,
             worker_debug=self.config.worker_debug,
         )
+
+        if MPI.COMM_WORLD.Get_rank() > 0:
+            return
 
         try:
             self.save_file("run.p", run)
@@ -621,7 +629,7 @@ class Dmosopt(Component):
             f = data["features"].to_numpy()[region][valid]
         else:
             f = None
-        epochs = data['epochs'][region][valid]
+        epochs = data["epochs"][region][valid]
 
         if epsilon is not None or len(x) == 0:
             best_x, best_y, best_f, best_c, eps = epsilon_get_best(
@@ -642,7 +650,7 @@ class Dmosopt(Component):
                     "y": best_y,
                     "f": best_f,
                     "c": best_c,
-                    'epochs': best_epoch,
+                    "epochs": best_epoch,
                     "np": np,
                 }
                 exec(f"reduced={sort_by}", context)
@@ -650,7 +658,7 @@ class Dmosopt(Component):
             else:
                 sort_by = None
 
-        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, 'epoch': best_epoch}
+        best = {"x": best_x, "y": best_y, "f": best_f, "c": best_c, "epoch": best_epoch}
 
         # apply sort
         if sort_by is not None:
@@ -665,8 +673,8 @@ class Dmosopt(Component):
                 best["f"] = pd.DataFrame(best["f"], columns=data["features"].columns)
             if best["c"] is not None:
                 best["c"] = pd.DataFrame(best["c"], columns=data["constraints"].columns)
-            if best['epoch'] is not None:
-                best['epoch'] = pd.DataFrame(best['epoch'], columns=['epoch'])
+            if best["epoch"] is not None:
+                best["epoch"] = pd.DataFrame(best["epoch"], columns=["epoch"])
 
         return best
 
@@ -690,7 +698,7 @@ class Dmosopt(Component):
         else:
             fmin, fmax = np.array(min_max[0]), np.array(min_max[1])
 
-        return (pf - fmin) / (fmax - fmin)
+        return (pf - fmin) / (fmax - fmin + 1e-8)
 
     def igd(self, ref_front, pf=None):
         ref_front, pf = self.front(ref_front), self.front(pf)
@@ -709,6 +717,13 @@ class Dmosopt(Component):
         indicator = indicators.Hypervolume(np.array(ref_point))
 
         return indicator.do(np.array(pf))
+
+    def norm_hv(self, nadir, pf=None):
+        return self.hypervolume(
+            ref_point=[1.1] * len(nadir),
+            pf=pf,
+            normalize=[[0.0] * len(nadir), nadir],
+        )
 
     def c_metric(self, ref_front, pf=None):
         """
