@@ -21,8 +21,8 @@ def joint(
     sensitivity=False,
     feasibility_solving=False,
     feasibility_max_iterations=50,
-    feasibility_use_joint_loss=True,
-    feasibility_max_steps_filter=True,
+    feasibility_loss="",
+    feasibility_max_steps_filter=False,
     save_weights=True,
     iterations=[],
 ):
@@ -47,9 +47,9 @@ def joint(
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
     - feasibility_max_iterations=50
         Only applies if feasibility_solving is True; number of iterations
-    - feasibility_use_joint_loss=True
-        Only applies if feasibility_solving is True; whether to use joint loss
-    - feasibility_max_steps_filter=True
+    - feasibility_loss=""
+        Only applies if feasibility_solving is True; loss flags
+    - feasibility_max_steps_filter=False
         Only applies if feasibility_solving is True; optional early stopping
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
@@ -144,7 +144,7 @@ def joint(
         def generate_initial(self, *args, **kwargs):
             x = self._wrapped.generate_initial(*args, **kwargs)
 
-            x = self.sampling_modifier(x)
+            # x = self.sampling_modifier(x)
 
             return x
 
@@ -171,7 +171,7 @@ def joint(
                 transform=[(l, u) for l, u in zip(xlb, xub)],
                 max_iterations=feasibility_max_iterations,
                 max_steps_filter=feasibility_max_steps_filter,
-                use_joint_loss=feasibility_use_joint_loss,
+                loss_flags=feasibility_loss,
             )
             return x_transformed
 
@@ -213,7 +213,7 @@ def dynamic_sampling(
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
-    feasibility_use_joint_loss=True,
+    feasibility_loss="",
     feasibility_max_steps_filter=True,
     verbose=1,
     # ---
@@ -239,8 +239,8 @@ def dynamic_sampling(
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
     - feasibility_max_iterations=50
         Only applies if feasibility_solving is True; number of iterations
-    - feasibility_use_joint_loss=True
-        Only applies if feasibility_solving is True; whether to use joint loss
+    - feasibility_loss=''
+        Only applies if feasibility_solving is True; optional flags
     - feasibility_max_steps_filter=True
         Only applies if feasibility_solving is True; optional early stopping
     """
@@ -423,7 +423,7 @@ def dynamic_sampling(
         learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
-        use_joint_loss=feasibility_use_joint_loss,
+        loss_flags=feasibility_loss,
     )
 
     if verbose > 0:

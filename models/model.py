@@ -722,7 +722,7 @@ class Model(tf.keras.Model):
         transform=None,
         max_iterations=100,
         max_steps_filter=None,
-        use_joint_loss=False,
+        loss_flags="",
         verbose=0,
         return_trace=False,
     ):
@@ -789,12 +789,16 @@ class Model(tf.keras.Model):
                         ),
                         logits,
                     )
-                    if self.mode == "c+o" and use_joint_loss:
+                    if self.mode == "c+o" and "joint" in loss_flags:
                         # add penalty for regression targets
                         loss = loss + tf.reduce_mean(prediction["objectives"])
 
                 # variance reward
-                loss += -tf.reduce_sum(tf.math.reduce_variance(z, axis=1))
+                variance = tf.reduce_sum(tf.math.reduce_variance(z, axis=1))
+                if "+var" in loss_flags:
+                    loss += variance
+                else:
+                    loss -= variance
 
             if iteration > max_iterations:
                 break
