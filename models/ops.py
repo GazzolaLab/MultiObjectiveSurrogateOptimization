@@ -64,6 +64,11 @@ def joint(
     if C is not None:
         yC = (C > 0).astype(int)
 
+    def _reduction(s):
+        a = tf.abs(s)
+        n = a / tf.reduce_max(a, axis=0)
+        return tf.reduce_mean(n, axis=0)
+
     class _Model:
         def __init__(self, model) -> None:
             self._wrapped = model
@@ -76,11 +81,6 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            def _reduction(s):
-                a = tf.abs(s)
-                n = a / tf.reduce_max(a, axis=0)
-                return tf.reduce_mean(n, axis=0)
-
             sens = self.sensitivity(x, _reduction)
             if isinstance(sens, dict):
                 # disregard constraint gradients
@@ -148,12 +148,19 @@ def joint(
 
             return x
 
-        def generate_strategy(self, *args, **kwargs):
-            x_gen, state_gen = self._wrapped.generate_strategy(*args, **kwargs)
+        def generate(
+            self,
+            **params,
+        ):
+            """Generate new parameter candidates to evaluate next."""
+            # Generate parameters to be evaluated based on strategy-specific method
+            x, state = self._wrapped.generate_strategy(**params)
 
-            x_gen = self.sampling_modifier(x_gen)
+            x = self.sampling_modifier(x)
 
-            return x_gen, state_gen
+            # Clip proposal candidates into allowed range
+            x_clipped = np.clip(x, self.bounds[:, 0], self.bounds[:, 1])
+            return x_clipped, state
 
         def sampling_modifier(self, samples):
             if not feasibility_solving:

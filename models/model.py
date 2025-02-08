@@ -427,7 +427,7 @@ class Model(tf.keras.Model):
                 feasible = feasible.ravel()
                 x = x[feasible, :]
                 y = y[feasible, :]
-            
+
         if x.shape[0] < n_splits * 2:
             return [1]
 
@@ -792,6 +792,9 @@ class Model(tf.keras.Model):
                     if self.mode == "c+o" and use_joint_loss:
                         # add penalty for regression targets
                         loss = loss + tf.reduce_mean(prediction["objectives"])
+
+                # variance reward
+                loss += -tf.reduce_sum(tf.math.reduce_variance(z, axis=1))
 
             if iteration > max_iterations:
                 break
