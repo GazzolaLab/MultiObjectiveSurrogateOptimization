@@ -332,6 +332,12 @@ class Dmosopt(Component):
 
         with multiprocessing.Pool(processes=processes) as pool:
             return pool.map(self.evaluate_objective_at, samples)
+        
+    def bounds_normalize(self, x):
+        q = np.zeros_like(x)
+        for i in range(x.shape[-1]):
+            q[:, i] = (x[:, i] - self.xlb[i]) / (self.xub[i] - self.xlb[i])
+        return q
 
     @property
     def output_filepath(self) -> str:
@@ -463,8 +469,10 @@ class Dmosopt(Component):
 
         result = []
         for i in include:
-            if i == "x":
+            if i.lower() == "x":
                 q = data["parameters"].to_numpy()[mask]
+                if i == "X":
+                    q = self.bounds_normalize(q)
             elif i == "y":
                 q = data["objectives"].to_numpy()[mask]
             elif i == "f":
@@ -602,7 +610,7 @@ class Dmosopt(Component):
         region: list | tuple | None = None,
         sort_by: str = "-np.std(y, axis=1)",
         as_dataframes: bool = True,
-        epsilon="auto",
+        epsilon=None,
     ):
         data = self.load_h5()
 
