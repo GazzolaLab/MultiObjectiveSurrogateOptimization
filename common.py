@@ -2,6 +2,18 @@ import os
 
 from machinable import get
 from machinable.utils import save_file, load_file
+import pandas as pd
+
+
+def fronts_nadir(components, **kwargs):
+    return (
+        pd.concat(components.map(lambda e: e.get_best(**kwargs)["y"])).max().to_list()
+    )
+
+
+def status(interface):
+    with get("interface.execution.status"):
+        interface.launch()
 
 
 def fetch(interface):
