@@ -116,6 +116,12 @@ class Modeling(Sopt):
             }
         }
 
+    @property
+    def cell_type(self):
+        m = self.config.dopt_params.opt_id.replace("dmosopt_", "")
+        m = m.replace("CA1_", "").replace("_neuron", "")
+        return m
+
     def plot_features(
         self, feature_selection="-np.std(y, axis=1)", metadata=None, fontsize="large"
     ):

@@ -78,7 +78,7 @@ class Sopt(Dmosopt):
 
         from models.wrapper import Wrapper
 
-        return Wrapper(name, self.xlb, self.xub)
+        return Wrapper(name, self.xlb, self.xub, **model_options)
 
     def label(self):
         m = self.config.dopt_params.opt_id.replace("dmosopt_", "") + "::" + self.m
