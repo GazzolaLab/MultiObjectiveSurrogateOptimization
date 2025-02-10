@@ -740,6 +740,12 @@ class Dmosopt(Component):
         pf = self.get_best(region=list(region))["y"].to_numpy().tolist()
         return self.norm_hv(nadir, pf=pf)
 
+    def norm_hv_epochs(self, nadir, from_zero=True):
+        return [
+            self.norm_hv_region(nadir, region)
+            for region in self.epoch_ranges(from_zero=from_zero)
+        ]
+
     def c_metric(self, ref_front, pf=None):
         """
         Calculates the set coverage of A over B, i.e. C(A, B),
