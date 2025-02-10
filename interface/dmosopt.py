@@ -332,7 +332,7 @@ class Dmosopt(Component):
 
         with multiprocessing.Pool(processes=processes) as pool:
             return pool.map(self.evaluate_objective_at, samples)
-        
+
     def bounds_normalize(self, x):
         q = np.zeros_like(x)
         for i in range(x.shape[-1]):
@@ -732,6 +732,13 @@ class Dmosopt(Component):
             pf=pf,
             normalize=[[0.0] * len(nadir), nadir],
         )
+
+    def norm_hv_region(self, nadir, region):
+        if region[1] > 10000:
+            # optimize for speed
+            region = [region[1] - 10000, region[1]]
+        pf = self.get_best(region=list(region))["y"].to_numpy().tolist()
+        return self.norm_hv(nadir, pf=pf)
 
     def c_metric(self, ref_front, pf=None):
         """
