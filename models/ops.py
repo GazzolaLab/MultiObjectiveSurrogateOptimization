@@ -20,9 +20,7 @@ def joint(
     constraints=False,
     sensitivity=False,
     feasibility_solving=False,
-    feasibility_max_iterations=50,
-    feasibility_loss="",
-    feasibility_max_steps_filter=False,
+    feasibility_targets="objective distance inverse",
     save_weights=True,
     iterations=[],
 ):
@@ -45,12 +43,8 @@ def joint(
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
-    - feasibility_max_iterations=50
-        Only applies if feasibility_solving is True; number of iterations
-    - feasibility_loss=""
-        Only applies if feasibility_solving is True; loss flags
-    - feasibility_max_steps_filter=False
-        Only applies if feasibility_solving is True; optional early stopping
+    - feasibility_targets="objective distance inverse"
+        Only applies if feasibility_solving is True;
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
     """
@@ -141,6 +135,19 @@ def joint(
             # we do not use the ranking
             self._wrapped.x_distance_metrics = None
 
+        def get_population_strategy(self):
+            if feasibility_solving:
+                x_prime = np.zeros_like(self.parameters)
+                split = len(x_prime) // 2
+                # elite
+                x_prime[:split, :] = self.parameters[:split, :]
+                # exploration
+                x_prime[split:, :] = self.sampling_modifier(self.parameters[split:, :])
+
+                return x_prime, self.objectives.copy()
+
+            return self.parameters.copy(), self.objectives.copy()
+
         def generate_initial(self, *args, **kwargs):
             x = self._wrapped.generate_initial(*args, **kwargs)
 
@@ -156,7 +163,7 @@ def joint(
             # Generate parameters to be evaluated based on strategy-specific method
             x, state = self._wrapped.generate_strategy(**params)
 
-            x = self.sampling_modifier(x)
+            # x = self.sampling_modifier(x)
 
             # Clip proposal candidates into allowed range
             x_clipped = np.clip(x, self.bounds[:, 0], self.bounds[:, 1])
@@ -165,14 +172,11 @@ def joint(
         def sampling_modifier(self, samples):
             if not feasibility_solving:
                 return samples
+
             x_transformed, _ = model.make_feasible(
-                samples,
-                learning_rate=0.1,
-                transform=[(l, u) for l, u in zip(xlb, xub)],
-                max_iterations=feasibility_max_iterations,
-                max_steps_filter=feasibility_max_steps_filter,
-                loss_flags=feasibility_loss,
+                samples, feasibility_targets=feasibility_targets
             )
+
             return x_transformed
 
         def __getattr__(self, name):
@@ -213,7 +217,7 @@ def dynamic_sampling(
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
-    feasibility_loss="",
+    feasibility_targets="objective distance inverse",
     feasibility_max_steps_filter=True,
     verbose=1,
     # ---
@@ -239,8 +243,8 @@ def dynamic_sampling(
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
     - feasibility_max_iterations=50
         Only applies if feasibility_solving is True; number of iterations
-    - feasibility_loss=''
-        Only applies if feasibility_solving is True; optional flags
+    - feasibility_targets='objective distance inverse'
+        Only applies if feasibility_solving is True
     - feasibility_max_steps_filter=True
         Only applies if feasibility_solving is True; optional early stopping
     """
@@ -423,7 +427,7 @@ def dynamic_sampling(
         learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
-        loss_flags=feasibility_loss,
+        feasibility_targets=feasibility_targets,
     )
 
     if verbose > 0:

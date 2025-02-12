@@ -106,6 +106,28 @@ def spearmanr_metric(y_true, y_pred):
     return np.mean(spearman_scores)
 
 
+def distance_maximization_loss(input_sample, X_, weight=1.0, epsilon=1e-12):
+    # input_sample shape: [batch_size, num_parameters]
+    # X_ shape: [n_samples, num_parameters]
+
+    # broad cast line up
+    input_expanded = tf.expand_dims(
+        input_sample, axis=1
+    )  # [batch_size, 1, num_parameters]
+    X_expanded = tf.expand_dims(X_, axis=0)  # [1, n_samples, num_parameters]
+
+    # pairwise distances => [batch_size, n_samples]
+    distances = tf.sqrt(
+        tf.reduce_sum(tf.square(input_expanded - X_expanded), axis=-1) + epsilon
+    )
+
+    batch_distances = tf.reduce_mean(distances, axis=1)  # [batch_size]
+
+    loss = -tf.reduce_mean(batch_distances)  # []
+
+    return weight * loss
+
+
 class BoundsNormalization(tf.keras.layers.Layer):
     def __init__(self, xlb, xub, **kwargs):
         super().__init__(**kwargs)
@@ -151,6 +173,10 @@ class Model(tf.keras.Model):
         self.mode = mode
         self.xlb = xlb
         self.xub = xub
+        self.X_ = None
+        self.X_raw_ = None
+        self.y_ = None
+        self.y_raw_ = None
 
         if xlb is not None and xub is not None:
             self.input_norm_layer = BoundsNormalization(xlb, xub)
@@ -419,6 +445,9 @@ class Model(tf.keras.Model):
         if x.shape[0] < n_splits * 2:
             return [1]
 
+        self.X_raw_ = x
+        self.y_raw_ = y
+
         x, y, yC = self.preprocess(x, y, yC)
 
         if yC is not None and self.exclude_infeasible:
@@ -512,6 +541,9 @@ class Model(tf.keras.Model):
         return stopped_after_epochs
 
     def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
+        self.X_ = x
+        self.y_ = y
+
         # normalize inputs
         self.input_norm_layer.adapt(x)
 
@@ -715,15 +747,19 @@ class Model(tf.keras.Model):
         if self.mode == "o":
             return self.norm_output(y_pred, inverse=True).numpy()
 
+    def raw_predict(self, x, *args, **kwargs):
+        return super().predict(x, *args, **kwargs)
+
     def make_feasible(
         self,
         X,
-        learning_rate=0.1,
+        learning_rate=0.001,
         transform=None,
-        max_iterations=100,
+        max_iterations=1000,
+        detect_plateau=True,
         max_steps_filter=None,
-        loss_flags="",
-        verbose=0,
+        targets="objective",
+        verbose=1,
         return_trace=False,
     ):
         if transform is None:
@@ -753,9 +789,11 @@ class Model(tf.keras.Model):
         loss_fn = tf.keras.losses.BinaryFocalCrossentropy()
 
         trace = [X]
+        loss_history = []
         iteration = 0
         while True:
-            with tf.GradientTape() as tape:
+            losses = []
+            with tf.GradientTape(persistent=True) as tape:
                 tape.watch(input_sample)
 
                 # reparametrize to ensure positivity
@@ -776,36 +814,77 @@ class Model(tf.keras.Model):
 
                 prediction = self(z)
                 logits = prediction
+                prefix = -1 if "inverse" in targets else 1
                 if self.mode == "o":
-                    # simply minimize the objectives
-                    loss = tf.reduce_mean(logits)
+                    if "objective" in targets:
+                        losses.append(
+                            prefix * tf.reduce_sum(tf.reduce_mean(prediction, axis=0))
+                        )
                 else:
                     if self.mode == "c+o":
                         logits = prediction["constraints"]
-                    loss = loss_fn(
-                        tf.constant(
-                            np.ones([input_sample.shape[0], self.num_constraints]),
-                            dtype=tf.float32,
-                        ),
-                        logits,
+                    losses.append(
+                        loss_fn(
+                            tf.constant(
+                                prefix
+                                * np.ones(
+                                    [input_sample.shape[0], self.num_constraints]
+                                ),
+                                dtype=tf.float32,
+                            ),
+                            logits,
+                        )
                     )
-                    if self.mode == "c+o" and "joint" in loss_flags:
+                    if self.mode == "c+o" and "objective" in targets:
                         # add penalty for regression targets
-                        loss = loss + tf.reduce_mean(prediction["objectives"])
+                        losses.append(prefix * tf.reduce_mean(prediction["objectives"]))
 
-                # variance reward
-                variance = tf.reduce_sum(tf.math.reduce_variance(z, axis=1))
-                if "+var" in loss_flags:
-                    loss += variance
-                else:
-                    loss -= variance
+                if self.X_raw_ is not None and "distance" in targets:
+                    # normalize input_sample and X_ to [0,1] using bounds
+                    xlb = tf.constant(self.xlb)
+                    xub = tf.constant(self.xub)
+                    r = xub - xlb
+                    # maximize pairwise distance to ensure exploration
+                    losses.append(
+                        distance_maximization_loss(
+                            (input_sample - xlb) / r, (self.X_raw_ - xlb) / r
+                        )
+                    )
+
+            derivatives = [tape.gradient(lt, input_sample) for lt in losses]
+            del tape
+
+            # balance via gradient norms
+            if len(losses) > 1:
+                norms = [tf.norm(g) for g in derivatives]
+                ref_norm = norms[0]
+                factors = [ref_norm / (norm + 1e-8) for norm in norms]
+                loss = tf.reduce_sum([w * l for w, l in zip(factors, losses)])
+                grads = tf.reduce_sum([w * l for w, l in zip(factors, derivatives)])
+            else:
+                loss = losses[0]
+                grads = derivatives[0]
 
             if iteration > max_iterations:
                 break
 
-            grads = tape.gradient(loss, input_sample)
-            if grads is None:
-                raise RuntimeError("Gradient computation failed")
+            loss_history.append(loss.numpy())
+
+            plateau_window = 50
+            if detect_plateau and len(loss_history) > plateau_window:
+                recent_losses = loss_history[-plateau_window:]
+                # iqr
+                q1 = np.percentile(recent_losses, 25)
+                q3 = np.percentile(recent_losses, 75)
+                iqr = q3 - q1
+
+                # break if IQR is very small relative to the median
+                median = np.median(recent_losses)
+                relative_iqr = iqr / abs(median) if median != 0 else iqr
+
+                if relative_iqr < 0.01:
+                    print("Loss is plateauing, stopping early")
+                    break
 
             if self.mode != "o":
                 is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
@@ -822,7 +901,11 @@ class Model(tf.keras.Model):
             optimizer.apply_gradients([(grads, input_sample)])
 
             if verbose > 0:
-                print(f"Iteration {iteration}, loss = {loss.numpy()}")
+                preds = np.mean(prediction, axis=0)
+                objs = np.mean(self.norm_output(prediction, inverse=True), axis=0)
+                print(
+                    f"Iteration {iteration}, loss = {loss.numpy()}, logits={preds}, objectives={objs}"
+                )
 
             if isinstance(transform, (list, tuple)):
                 input_sample.assign(apply_bounds(input_sample, transform))
@@ -856,13 +939,13 @@ class Model(tf.keras.Model):
         steps = steps.numpy()
 
         if return_trace:
-            return trace, steps
+            return trace, loss_history
 
         if max_steps_filter is True:
             max_steps_filter = max_iterations - 2
 
         if not max_steps_filter or self.mode == "o":
-            return zp, steps
+            return zp, loss_history
 
         # only use the samples where the steps where below cutoff
         x_filtered = np.where(
@@ -871,7 +954,7 @@ class Model(tf.keras.Model):
             X,
         )
 
-        return x_filtered, steps
+        return x_filtered, loss_history
 
     def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
         X = tf.convert_to_tensor(X, dtype=tf.float32)

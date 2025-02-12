@@ -91,6 +91,15 @@ class Sopt(Dmosopt):
 
         return m + "[" + fs + "]"
 
+    def version_opt(self):
+        return {
+            "dopt_params": {
+                "optimizer_name": "models.opt.Opt",
+                "optimizer_kwargs": {},
+                "num_generations": 1,
+            }
+        }
+
     def version_joint_model(self, **kwargs):
         if kwargs.get("mode", "c+o") not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
