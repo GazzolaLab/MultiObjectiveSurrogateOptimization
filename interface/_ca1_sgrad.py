@@ -29,17 +29,26 @@ class _Ca1Sgrad(Interface):
                     assert initial.cached()
                     initial.save_attribute("preflight", True)
                     with get("machinable.scope", {"parent": initial.hash}):
-                        for version in (
-                            [
-                                "~joint_model(mode='o', feasibility_solving=True, feasibility_targets='objective inverse distance')"
-                            ],
-                            [
-                                "~joint_model(mode='o', feasibility_solving=True, feasibility_targets='objective inverse')"
-                            ],
-                            [
-                                "~joint_model(mode='o', feasibility_solving=True, feasibility_targets='distance')"
-                            ],
-                            ["~joint_model(mode='o')", "~opt"],
+                        for kwargs in (
+                            {
+                                "mode": "o",
+                                "feasibility_solving": True,
+                                "feasibility_targets": "-objective distance",
+                            },
+                            {
+                                "mode": "o",
+                                "feasibility_solving": True,
+                                "feasibility_targets": "-objective",
+                            },
+                            {
+                                "mode": "o",
+                                "feasibility_solving": True,
+                                "feasibility_targets": "distance",
+                            },
+                            {
+                                "mode": "o",
+                                "sgrad": True,
+                            },
                         ):
                             e = get(
                                 "interface.sopt_modeling",
@@ -47,11 +56,12 @@ class _Ca1Sgrad(Interface):
                                     f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_{nm}.yaml")""",
                                     {
                                         "dopt_params": {
-                                            "n_epochs": 25,
+                                            "surrogate_custom_training": "models.ops.joint",
+                                            "n_epochs": 100,
+                                            "surrogate_custom_training_kwargs": kwargs,
                                         }
                                     },
-                                ]
-                                + version,
+                                ],
                             ).launch()
 
                             if os.environ.get("LAUNCH", 0) and not os.path.isfile(
