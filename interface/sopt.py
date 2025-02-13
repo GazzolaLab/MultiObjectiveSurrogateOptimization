@@ -103,10 +103,14 @@ class Sopt(Dmosopt):
     def version_joint_model(self, **kwargs):
         if kwargs.get("mode", "c+o") not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
+        params = {}
+        if kwargs.get('sgrad', False):
+            params = {"num_generations": 1}
         return {
             "dopt_params": {
                 "surrogate_custom_training": "models.ops.joint",
                 "surrogate_custom_training_kwargs": kwargs,
+                **params
             }
         }
 
