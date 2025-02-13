@@ -177,6 +177,8 @@ class Model(tf.keras.Model):
         self.X_raw_ = None
         self.y_ = None
         self.y_raw_ = None
+        self.yC_ = None
+        self.yC_raw_ = None
 
         if xlb is not None and xub is not None:
             self.input_norm_layer = BoundsNormalization(xlb, xub)
@@ -397,6 +399,10 @@ class Model(tf.keras.Model):
 
         epochs = int(epochs)
 
+        self.X_raw_ = x
+        self.y_raw_ = y
+        self.yC_raw_ = yC
+
         x, y, yC = self.preprocess(x, y, yC)
 
         if yC is not None and self.exclude_infeasible:
@@ -444,9 +450,6 @@ class Model(tf.keras.Model):
     ):
         if x.shape[0] < n_splits * 2:
             return [1]
-
-        self.X_raw_ = x
-        self.y_raw_ = y
 
         x, y, yC = self.preprocess(x, y, yC)
 
@@ -542,7 +545,15 @@ class Model(tf.keras.Model):
 
     def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
         self.X_ = x
-        self.y_ = y
+        if self.mode == "c+o":
+            self.y_ = y["objectives"]
+            self.yC_ = y["constraints"]
+        elif self.mode == "c":
+            self.y_ = None
+            self.yC_ = y
+        elif self.mode == "o":
+            self.y_ = y
+            self.yC_ = None
 
         # normalize inputs
         self.input_norm_layer.adapt(x)
@@ -786,7 +797,6 @@ class Model(tf.keras.Model):
         )
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        loss_fn = tf.keras.losses.BinaryFocalCrossentropy()
 
         trace = [X]
         loss_history = []
@@ -813,18 +823,36 @@ class Model(tf.keras.Model):
                     raise ValueError(f"Invalid transform! {transform}")
 
                 prediction = self(z)
-                logits = prediction
-                prefix = -1 if "inverse" in targets else 1
-                if self.mode == "o":
-                    if "objective" in targets:
-                        losses.append(
-                            prefix * tf.reduce_sum(tf.reduce_mean(prediction, axis=0))
-                        )
-                else:
-                    if self.mode == "c+o":
-                        logits = prediction["constraints"]
+
+                logits_o = None
+                logits_c = None
+                if self.mode == "c+o":
+                    logits_o = prediction["objectives"]
+                    logits_c = prediction["constraints"]
+                elif self.mode == "o":
+                    logits_o = prediction
+                elif self.mode == "c":
+                    logits_c = prediction
+
+                if "o" in self.mode and "objective" in targets:
+                    y_ = tf.constant(self.y_)
+                    o = self.norm_output(logits_o, inverse=True)
+
+                    nadir = tf.reduce_max(tf.concat([o, y_], axis=0), axis=0)
+
+                    front = o / (nadir + 1e-8)
+                    reference = tf.ones_like(nadir) * 1.1
+
+                    dominated_space = tf.maximum(reference - front, 0)
+                    volume = tf.reduce_prod(dominated_space, axis=-1)
+                    score = tf.reduce_sum(-1 * volume)
+
+                    prefix = -1 if "-objective" in targets else 1
+                    losses.append(prefix * score)
+
+                if "c" in self.mode and "constraint" in targets:
                     losses.append(
-                        loss_fn(
+                        tf.keras.losses.BinaryFocalCrossentropy()(
                             tf.constant(
                                 prefix
                                 * np.ones(
@@ -832,12 +860,9 @@ class Model(tf.keras.Model):
                                 ),
                                 dtype=tf.float32,
                             ),
-                            logits,
+                            logits_c,
                         )
                     )
-                    if self.mode == "c+o" and "objective" in targets:
-                        # add penalty for regression targets
-                        losses.append(prefix * tf.reduce_mean(prediction["objectives"]))
 
                 if self.X_raw_ is not None and "distance" in targets:
                     # normalize input_sample and X_ to [0,1] using bounds
@@ -887,7 +912,7 @@ class Model(tf.keras.Model):
                     break
 
             if self.mode != "o":
-                is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
+                is_feasible = tf.math.reduce_all(logits_c > 0.99, axis=1)
 
                 # record number of steps for feasible samples
                 steps = tf.where(is_feasible, steps, iteration)

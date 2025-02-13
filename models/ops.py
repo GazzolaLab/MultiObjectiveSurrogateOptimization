@@ -19,6 +19,7 @@ def joint(
     objectives=True,
     constraints=False,
     sensitivity=False,
+    backbone="resnet",
     feasibility_solving=False,
     feasibility_targets="objective distance inverse",
     save_weights=True,
@@ -39,6 +40,8 @@ def joint(
         dmosopt options. For example, if you specify `"surrogate_method_name": 'gpr'`
         and set `constraints=True`, the MLP model will be used for the constraints
         but to predict the objective the usual `gpr` surrogate will be used.
+    - backbone='resnet'
+        Model backbone; 'resnet', 'transformer', 'fttransfomer'
     - feasibility_solving=False
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
@@ -101,10 +104,17 @@ def joint(
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
 
-    from models.resnet import Resnet
+    if backbone == "resnet":
+        from models.resnet import Resnet as Backbone
+    elif backbone == "transformer":
+        from models.transformer import Transformer as Backbone
+    elif backbone == "fttransformer":
+        from models.fttransformer import FTTransformer as Backbone
+    else:
+        raise ValueError(f"Invalid backbone: {backbone}")
 
     model = _Model(
-        Resnet(
+        Backbone(
             num_parameters=Xinit.shape[1],
             num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
@@ -214,6 +224,7 @@ def dynamic_sampling(
     stop_condition="convergence_condition",
     convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1",
     mode="c+o",
+    backbone="resnet",
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
@@ -235,6 +246,8 @@ def dynamic_sampling(
     - mode="c+o"
         What information to use when training the model (c=constraints, o=objectives, c+o=both)
         Add `!` to force mode even if most of the constraint samples are equal
+    - backbone='resnet'
+        Model backbone; 'resnet', 'transformer', 'fttransfomer'
     - optimizer_sampling=None
         Whether to use the optimizer to suggest samples
     - feasibility_solving=False
@@ -295,9 +308,16 @@ def dynamic_sampling(
                 print(f"Using o-mode (overriding {mode}-mode)")
             mode = "o"
 
-    from models.resnet import Resnet
+    if backbone == "resnet":
+        from models.resnet import Resnet as Backbone
+    elif backbone == "transformer":
+        from models.transformer import Transformer as Backbone
+    elif backbone == "fttransformer":
+        from models.fttransformer import FTTransformer as Backbone
+    else:
+        raise ValueError(f"Invalid backbone: {backbone}")
 
-    model = Resnet(
+    model = Backbone(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
