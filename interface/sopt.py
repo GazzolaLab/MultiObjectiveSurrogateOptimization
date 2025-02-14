@@ -56,6 +56,10 @@ class Sopt(Dmosopt):
     def m(self):
         return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
 
+    @property
+    def trial(self):
+        return self.context.predicate.get("trial", 0)
+
     def get_model(self, name, **model_options):
         if "joint" in name:
             if "mlp" in name:
@@ -104,13 +108,13 @@ class Sopt(Dmosopt):
         if kwargs.get("mode", "c+o") not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
         params = {}
-        if kwargs.get('sgrad', False):
+        if kwargs.get("sgrad", False):
             params = {"num_generations": 1}
         return {
             "dopt_params": {
                 "surrogate_custom_training": "models.ops.joint",
                 "surrogate_custom_training_kwargs": kwargs,
-                **params
+                **params,
             }
         }
 

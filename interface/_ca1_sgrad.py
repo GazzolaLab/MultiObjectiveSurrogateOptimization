@@ -29,27 +29,34 @@ class _Ca1Sgrad(Interface):
                     assert initial.cached()
                     initial.save_attribute("preflight", True)
                     with get("machinable.scope", {"parent": initial.hash}):
-                        for kwargs in (
-                            {
-                                "mode": "o",
-                                "feasibility_solving": True,
-                                "feasibility_targets": "-objective distance",
-                            },
-                            {
-                                "mode": "o",
-                                "feasibility_solving": True,
-                                "feasibility_targets": "-objective",
-                            },
-                            {
-                                "mode": "o",
-                                "feasibility_solving": True,
-                                "feasibility_targets": "distance",
-                            },
-                            {
-                                "mode": "o",
-                                "sgrad": True,
-                            },
-                        ):
+                        vv = []
+                        for mode in ["o", "c+o"]:
+                            for target in [
+                                "objective distance",
+                                "objective",
+                                "distance",
+                            ]:
+                                vv.append(
+                                    {
+                                        "mode": mode,
+                                        "feasibility_solving": True,
+                                        "feasibility_targets": target,
+                                    }
+                                )
+
+                                vv.append(
+                                    {"mode": mode, "sgrad": True, "_target": target}
+                                )
+
+                        for kwargs in vv:
+                            params = {}
+                            if kwargs.get("sgrad", False):
+                                params = {
+                                    "num_generations": 1,
+                                    "optimizer_kwargs": dict(
+                                        targets=kwargs.pop("_target")
+                                    ),
+                                }
                             e = get(
                                 "interface.sopt_modeling",
                                 [
@@ -57,8 +64,9 @@ class _Ca1Sgrad(Interface):
                                     {
                                         "dopt_params": {
                                             "surrogate_custom_training": "models.ops.joint",
-                                            "n_epochs": 100,
+                                            "n_epochs": 75,
                                             "surrogate_custom_training_kwargs": kwargs,
+                                            **params,
                                         }
                                     },
                                 ],

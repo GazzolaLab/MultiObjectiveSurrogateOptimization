@@ -10,7 +10,7 @@ class Opt(MOEA):
         nInput: int,
         nOutput: int,
         model: Optional[Any],
-        contrastive=False,
+        targets="objective",
         **kwargs,
     ):
         super().__init__(
@@ -25,7 +25,7 @@ class Opt(MOEA):
         self.parameters = None
         self.x = None
         self.y = None
-        self.contrastive = contrastive
+        self.targets = targets
 
     def get_population_strategy(self) -> Tuple[np.ndarray, np.ndarray]:
         return self.parameters.copy(), self.objectives.copy()
@@ -43,17 +43,17 @@ class Opt(MOEA):
         self.parameters, self.objectives, _ = remove_worst(x, y, self.popsize)
 
     def generate_strategy(self, **params):
-        if self.contrastive:
+        if "|" in self.targets:
             split = len(self.parameters) // 2
             positive, _ = self.model.objective.make_feasible(
                 self.parameters[:split, :],
-                targets="objective",
+                targets=self.targets.split("|")[0],
                 verbose=1,
             )
 
             negative, _ = self.model.objective.make_feasible(
                 self.parameters[split:, :],
-                targets="objective inverse",
+                targets=self.targets.split("|")[1],
                 verbose=1,
             )
 
@@ -63,7 +63,7 @@ class Opt(MOEA):
         else:
             samples, _ = self.model.objective.make_feasible(
                 self.parameters,
-                targets="objective",
+                targets=self.targets,
                 verbose=1,
             )
 
