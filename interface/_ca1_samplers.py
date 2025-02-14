@@ -16,10 +16,10 @@ class _Ca1Samplers(Interface):
         ]
 
     def launch(self):
-        for trial in range(1):
+        for trial in range(3):
             with get("machinable.scope", {"trial": trial}):
                 for nm in self.populations():
-                    for sampler in ["glp", "slh", "lh", "mc", "sobol"]:
+                    for sampler in ["slh", "lh", "mc", "sobol"]:
                         get(
                             "interface.sopt_modeling",
                             [
