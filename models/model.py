@@ -770,6 +770,7 @@ class Model(tf.keras.Model):
         detect_plateau=True,
         max_steps_filter=None,
         targets="objective",
+        zero_infeasible=False,
         verbose=1,
         return_trace=False,
     ):
@@ -911,7 +912,7 @@ class Model(tf.keras.Model):
                     print("Loss is plateauing, stopping early")
                     break
 
-            if self.mode != "o":
+            if zero_infeasible and self.mode != "o":
                 is_feasible = tf.math.reduce_all(logits_c > 0.99, axis=1)
 
                 # record number of steps for feasible samples
@@ -926,11 +927,14 @@ class Model(tf.keras.Model):
             optimizer.apply_gradients([(grads, input_sample)])
 
             if verbose > 0:
-                preds = np.mean(prediction, axis=0)
-                objs = np.mean(self.norm_output(prediction, inverse=True), axis=0)
-                print(
-                    f"Iteration {iteration}, loss = {loss.numpy()}, logits={preds}, objectives={objs}"
-                )
+                try:
+                    preds = np.mean(prediction, axis=0)
+                    objs = np.mean(self.norm_output(prediction, inverse=True), axis=0)
+                    print(
+                        f"Iteration {iteration}, loss = {loss.numpy()}, logits={preds}, objectives={objs}"
+                    )
+                except:
+                    pass
 
             if isinstance(transform, (list, tuple)):
                 input_sample.assign(apply_bounds(input_sample, transform))
