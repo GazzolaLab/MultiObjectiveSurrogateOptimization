@@ -5,6 +5,7 @@ from dmosopt.MOASMO import xinit
 from pprint import pprint
 from models.opt import Opt
 
+
 def joint(
     optimizer_cls,
     Xinit,
@@ -22,7 +23,7 @@ def joint(
     sensitivity=False,
     backbone="resnet",
     feasibility_solving=False,
-    feasibility_targets="-objective",
+    feasibility_targets="objective",
     save_weights=True,
     iterations=[],
 ):
@@ -49,7 +50,7 @@ def joint(
         towards feasibility. This can be activated conditionally using a string,
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4.
         Feasibility options are ignored when using sgrad
-    - feasibility_targets="-objective"
+    - feasibility_targets="objective"
         Only applies if feasibility_solving is True;
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
@@ -134,6 +135,7 @@ def joint(
     scores = model.autoeval(x, y, yC)
 
     scores["num_samples"] = x.shape[0]
+    scores["iteration"] = len(iterations)
 
     if isinstance(feasibility_solving, str):
         # activate on a certain condition
@@ -147,6 +149,10 @@ def joint(
 
             # we do not use the ranking
             self._wrapped.x_distance_metrics = None
+
+        @property
+        def population_objectives(self):
+            return self.get_population_strategy()
 
         def get_population_strategy(self):
             if feasibility_solving:
@@ -187,7 +193,9 @@ def joint(
                 return samples
 
             x_transformed, _ = model.make_feasible(
-                samples, feasibility_targets=feasibility_targets
+                samples,
+                feasibility_targets=feasibility_targets,
+                verbose=1,
             )
 
             return x_transformed
@@ -231,7 +239,7 @@ def dynamic_sampling(
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
-    feasibility_targets="-objective distance",
+    feasibility_targets="objective distance",
     feasibility_max_steps_filter=True,
     verbose=1,
     # ---
@@ -259,7 +267,7 @@ def dynamic_sampling(
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
     - feasibility_max_iterations=50
         Only applies if feasibility_solving is True; number of iterations
-    - feasibility_targets='-objective distance'
+    - feasibility_targets='objective distance'
         Only applies if feasibility_solving is True
     - feasibility_max_steps_filter=True
         Only applies if feasibility_solving is True; optional early stopping
