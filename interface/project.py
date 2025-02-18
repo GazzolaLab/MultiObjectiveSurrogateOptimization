@@ -5,12 +5,12 @@ import json
 
 class MultiObjectiveSurrogateOptimization(Project):
     def on_resolve_element(self, module):
-        if module == "interface.execution.tacc":
-            m, c = super().on_resolve_element("interface.execution.slurm")
-            return [
-                m,
-                {"mpi": "ibrun", "preamble": "\nsleep $((RANDOM % 300))\n"},
-            ], c
+        # if module == "interface.execution.tacc":
+        #    m, c = super().on_resolve_element("interface.execution.slurm")
+        #    return [
+        #        m,
+        #        {"mpi": "ibrun", "preamble": "\nsleep $((RANDOM % 300))\n"},
+        #    ], c
 
         if module == "interface.storage.globus":
             m, c = super().on_resolve_element("interface.storage.globus")
