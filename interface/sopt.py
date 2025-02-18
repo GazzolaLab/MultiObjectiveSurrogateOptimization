@@ -110,6 +110,8 @@ class Sopt(Dmosopt):
         params = {}
         if kwargs.get("sgrad", False):
             params = {"num_generations": 1}
+            if kwargs.get("targets", False):
+                params["optimizer_kwargs"] = dict(targets=kwargs.pop("targets"))
         return {
             "dopt_params": {
                 "surrogate_custom_training": "models.ops.joint",
