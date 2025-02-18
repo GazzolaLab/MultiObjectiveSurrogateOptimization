@@ -4,13 +4,13 @@ from machinable import Interface, get
 
 class _Ca1Hybrid(Interface):
     def populations(self):
-        return ["SCA", "BS", "NGFC", "OLM"]
+        return ["BS"]
 
     def launch(self):
         from models.ops import import_initial_samples
 
         for nm in self.populations():
-            for trial in range(3):
+            for trial in range(1):
                 with get("machinable.scope", {"trial": trial}):
                     initial = get(
                         "interface.sopt_modeling",
@@ -29,6 +29,8 @@ class _Ca1Hybrid(Interface):
                             for target in [
                                 "objective distance",
                                 "objective",
+                                "-objective",
+                                "-objective distance",
                                 "distance",
                             ]:
                                 vv.append(
@@ -38,6 +40,7 @@ class _Ca1Hybrid(Interface):
                                             "surrogate_custom_training_kwargs": {
                                                 "mode": mode,
                                                 "objectives": False,
+                                                "feasibility_solving": True,
                                                 "feasibility_targets": target,
                                             },
                                         }
@@ -53,7 +56,7 @@ class _Ca1Hybrid(Interface):
                                     [version]
                                     + [
                                         {
-                                            "dopt_params.n_epochs": 25,
+                                            "dopt_params.n_epochs": 10,
                                         }
                                     ],
                                 ).launch()
