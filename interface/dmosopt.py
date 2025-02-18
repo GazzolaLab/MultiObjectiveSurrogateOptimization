@@ -615,9 +615,9 @@ class Dmosopt(Component):
         data = self.load_h5()
 
         if region is None:
-            if len(data["epochs"]) > 10000:
+            if len(data["epochs"]) > 5000:
                 # optimize for speed since best solutions will be found in the last epochs
-                region = slice(-10000, None)
+                region = slice(-5000, None)
             else:
                 region = slice(None)
         else:
@@ -734,9 +734,9 @@ class Dmosopt(Component):
         )
 
     def norm_hv_region(self, nadir, region):
-        if region[1] > 10000:
+        if region[1] > 5000:
             # optimize for speed
-            region = [region[1] - 10000, region[1]]
+            region = [region[1] - 5000, region[1]]
         pf = self.get_best(region=list(region))["y"].to_numpy().tolist()
         return self.norm_hv(nadir, pf=pf)
 
