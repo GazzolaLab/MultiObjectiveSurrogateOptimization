@@ -2,10 +2,8 @@ from machinable import Interface, get
 
 
 class ScalingExperiment(Interface):
+    def launch(self): ...
 
-    def launch(self):
-        ...
-        
     def gh(self, cuda=True):
         for nodes in [1, 2, 4, 8, 16]:
             get(

@@ -429,7 +429,7 @@ class Modeling(Sopt):
 
         # Load the NEURON libraries
         h.load_file("stdrun.hoc")
-        h.load_file("rn.hoc")
+        # h.load_file("rn.hoc")
 
         # Enable variable time step solver
         h.cvode.use_fast_imem(1)
