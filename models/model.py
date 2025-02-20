@@ -544,7 +544,19 @@ class Model(tf.keras.Model):
 
         return stopped_after_epochs
 
-    def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
+    def fit(
+        self,
+        x=None,
+        y=None,
+        batch_size=None,
+        epochs=1,
+        verbose="auto",
+        callbacks=None,
+        validation_split=0.0,
+        validation_data=None,
+        *args,
+        **kwargs,
+    ):
         self.X_ = x
         if self.mode == "c+o":
             self.y_ = y["objectives"]
@@ -562,24 +574,62 @@ class Model(tf.keras.Model):
         self._last_fit_epochs = epochs
 
         if self.mode == "c+o":
+            o_n = self.norm_output(y["objectives"], adapt=True).numpy()
+            if validation_data is not None:
+                validation_data = (
+                    validation_data[0],
+                    {
+                        "objectives": self.norm_output(
+                            validation_data[1]["objectives"]
+                        ).numpy(),
+                        "constraints": validation_data[1]["constraints"],
+                    },
+                )
             return super().fit(
                 x,
                 {
-                    "objectives": self.norm_output(y["objectives"], adapt=True).numpy(),
+                    "objectives": o_n,
                     "constraints": y["constraints"],
                 },
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
                 *args,
-                epochs=epochs,
                 **kwargs,
             )
         elif self.mode == "c":
-            return super().fit(x, y, *args, epochs=epochs, **kwargs)
-        else:
             return super().fit(
                 x,
-                self.norm_output(y, adapt=True).numpy(),
+                y,
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
                 *args,
-                epochs=epochs,
+                **kwargs,
+            )
+        else:
+            o_n = self.norm_output(y, adapt=True).numpy()
+            if validation_data is not None:
+                validation_data = (
+                    validation_data[0],
+                    self.norm_output(validation_data[1]).numpy(),
+                )
+            return super().fit(
+                x,
+                o_n,
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
+                *args,
                 **kwargs,
             )
 
