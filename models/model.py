@@ -154,7 +154,7 @@ class Model(tf.keras.Model):
         learning_rate=0.001,
         outlier_threshold=0,
         exclude_infeasible=False,
-        normalize_targets=True,
+        normalize_targets="minmax",
         gradnorm=False,
         regression_loss="mse",
         **kwargs,
@@ -203,6 +203,7 @@ class Model(tf.keras.Model):
         self.prepare_layers()
 
         objective_loss = {
+            "mae": "mae",
             "mse": "mse",
             "huber": huber_loss,
             "logcosh": log_cosh_loss,
@@ -582,13 +583,19 @@ class Model(tf.keras.Model):
                 **kwargs,
             )
 
-    def norm_output(self, yR, inverse=False, adapt=False, method="log"):
-        if not self.normalize_targets:
+    def norm_output(self, yR, inverse=False, adapt=False, method=None):
+        if method is None:
+            method = self.normalize_targets
+
+        if method is False:
             return tf.constant(yR)
 
         if adapt:
-            if method == "minmax":
-                self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
+            if "minmax" in method:
+                if method == "minmax0":
+                    self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
+                else:
+                    self.min_mean_yR.assign(np.min(yR, axis=0))
                 self.max_std_yR.assign(np.max(yR, axis=0))
             elif method == "standard":
                 self.min_mean_yR.assign(np.mean(yR, axis=0))
@@ -613,16 +620,18 @@ class Model(tf.keras.Model):
                 return (yR - self.min_mean_yR) / (
                     self.max_std_yR + tf.keras.backend.epsilon()
                 )
-        elif method == "log":
+        elif "log" in method:
             if inverse:
+                if method == "log_":
+                    return tf.constant(yR)
                 return tf.exp(yR) - 1
             else:
                 return tf.math.log1p(yR)
         else:
-            raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
+            raise ValueError(f"Invalid scaling method: {method}.")
 
     def get_output_norm(self):
-        if not self.normalize_targets:
+        if self.normalize_targets is False:
             return None
 
         return self.min_mean_yR.numpy().tolist(), self.max_std_yR.numpy().tolist()
