@@ -571,7 +571,9 @@ class Model(tf.keras.Model):
                             mode="min",
                         )
                         for mon in (
-                            ["val_objectives_loss", "val_constraints_loss"]
+                            [
+                                "val_objectives_loss",  # "val_constraints_loss"
+                            ]
                             if self.mode == "c+o"
                             else ["val_loss"]
                         )
