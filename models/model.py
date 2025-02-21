@@ -154,9 +154,9 @@ class Model(tf.keras.Model):
         learning_rate=0.001,
         outlier_threshold=0,
         exclude_infeasible=False,
-        normalize_targets="minmax0",
+        normalize_targets="range",
         gradnorm=False,
-        regression_loss=None,
+        regression_loss="mse",
         **kwargs,
     ):
         super(Model, self).__init__(**kwargs)
@@ -188,6 +188,7 @@ class Model(tf.keras.Model):
 
         self.gradnorm_layers = []
 
+        self.timestep = None
         if self.use_gradnorm:
             self.objective_weights = tf.Variable(
                 [1] * self.num_objectives,
@@ -214,20 +215,7 @@ class Model(tf.keras.Model):
                 "relative_error": relative_error_loss,
             }[regression_loss]
         except KeyError:
-
-            def objective_loss(y_true, y_pred, alpha=1, beta=0.01):
-                mins = tf.reduce_min(self.y_norm_, axis=0)
-                maxs = tf.reduce_max(self.y_norm_, axis=0)
-
-                # move to floor
-                ytrue = y_true - mins
-                ypred = y_pred - mins
-
-                # high weights for low values
-                rerr = tf.abs(ytrue - ypred) / (alpha * tf.abs(ytrue) + beta)
-                rerr_ = tf.reduce_mean(rerr, axis=0)
-
-                return tf.reduce_mean(rerr_)
+            objective_loss = self.objective_loss
 
         if self.mode == "c+o":
             loss = {
@@ -272,6 +260,37 @@ class Model(tf.keras.Model):
         )
 
         self._last_fit_epochs = -1
+
+    def objective_loss(self, y_true, y_pred, alpha=1, beta=0.01, verbose=False):
+        mins = tf.reduce_min(self.y_norm_, axis=0)
+        maxs = tf.reduce_max(self.y_norm_, axis=0)
+
+        weights = 1  # / (maxs + 1e-7)
+
+        if verbose:
+            print("mins", mins)
+            print("maxs", maxs)
+
+            print(y_true, "y_true")
+            print(y_pred, "y_pred")
+
+        # move to floor
+        ytrue = y_true - mins
+        ypred = y_pred - mins
+
+        if verbose:
+            print(ytrue, "ytrue")
+            print(ypred, "ypred")
+
+        # high weights for low values
+        rerr = tf.abs(ytrue - ypred) / (alpha * tf.abs(ytrue) + beta)
+
+        if verbose:
+            print(rerr, "rerr")
+
+        rerr_ = tf.reduce_mean(rerr, axis=0)
+
+        return tf.reduce_mean(weights * rerr_)
 
     def train_step(self, data):
         if not self.use_gradnorm:
@@ -600,6 +619,9 @@ class Model(tf.keras.Model):
             self.y_ = y
             self.yC_ = None
 
+        if self.timestep is not None:
+            self.timestep.assign(0)
+
         # normalize inputs
         self.input_norm_layer.adapt(x)
 
@@ -673,8 +695,8 @@ class Model(tf.keras.Model):
             return tf.constant(yR)
 
         if adapt:
-            if "minmax" in method:
-                if method == "minmax0":
+            if "max" in method or method == "range":
+                if "0" in method:
                     self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
                 else:
                     self.min_mean_yR.assign(np.min(yR, axis=0))
@@ -685,16 +707,32 @@ class Model(tf.keras.Model):
             elif method == "log":
                 pass
 
-        if "minmax" in method:
+        if "max" in method:
+            centering = 0.0
+            if "c" in method:
+                centering = 0.5
             if inverse:
-                return (yR + 0.5) * (
+                return (yR + centering) * (
                     self.max_std_yR - self.min_mean_yR
                 ) + self.min_mean_yR
             else:
                 return (
                     (yR - self.min_mean_yR)
                     / (self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon())
-                ) - 0.5
+                ) - centering
+        elif method == "range":
+            top = tf.reduce_max(self.max_std_yR)
+            bottom = tf.reduce_max(self.min_mean_yR)
+            if inverse:
+                exps = tf.exp(yR) - 1
+                scaled = (exps - bottom) / (top - bottom)
+                return scaled * (self.max_std_yR - self.min_mean_yR) + self.min_mean_yR
+            else:
+                normalized = (yR - self.min_mean_yR) / (
+                    self.max_std_yR - self.min_mean_yR
+                )
+                upscaled = normalized * (top - bottom) + bottom
+                return tf.math.log1p(upscaled)
         elif method == "standard":
             if inverse:
                 return yR * self.max_std_yR + self.min_mean_yR
