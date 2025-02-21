@@ -154,9 +154,9 @@ class Model(tf.keras.Model):
         learning_rate=0.001,
         outlier_threshold=0,
         exclude_infeasible=False,
-        normalize_targets="minmax",
+        normalize_targets="minmax0",
         gradnorm=False,
-        regression_loss="mse",
+        regression_loss=None,
         **kwargs,
     ):
         super(Model, self).__init__(**kwargs)
@@ -177,6 +177,7 @@ class Model(tf.keras.Model):
         self.X_raw_ = None
         self.y_ = None
         self.y_raw_ = None
+        self.y_norm_ = None
         self.yC_ = None
         self.yC_raw_ = None
 
@@ -202,15 +203,31 @@ class Model(tf.keras.Model):
 
         self.prepare_layers()
 
-        objective_loss = {
-            "mae": "mae",
-            "mse": "mse",
-            "huber": huber_loss,
-            "logcosh": log_cosh_loss,
-            "weighted_logcosh": weighted_log_cosh_loss,
-            "distance_weighted_mse": distance_weighted_mse,
-            "relative_error": relative_error_loss,
-        }[regression_loss]
+        try:
+            objective_loss = {
+                "mae": "mae",
+                "mse": "mse",
+                "huber": huber_loss,
+                "logcosh": log_cosh_loss,
+                "weighted_logcosh": weighted_log_cosh_loss,
+                "distance_weighted_mse": distance_weighted_mse,
+                "relative_error": relative_error_loss,
+            }[regression_loss]
+        except KeyError:
+
+            def objective_loss(y_true, y_pred, alpha=1, beta=0.01):
+                mins = tf.reduce_min(self.y_norm_, axis=0)
+                maxs = tf.reduce_max(self.y_norm_, axis=0)
+
+                # move to floor
+                ytrue = y_true - mins
+                ypred = y_pred - mins
+
+                # high weights for low values
+                rerr = tf.abs(ytrue - ypred) / (alpha * tf.abs(ytrue) + beta)
+                rerr_ = tf.reduce_mean(rerr, axis=0)
+
+                return tf.reduce_mean(rerr_)
 
         if self.mode == "c+o":
             loss = {
@@ -324,6 +341,8 @@ class Model(tf.keras.Model):
             trainable_vars = self.trainable_variables
             gradients = tape.gradient(total_loss, trainable_vars)
 
+        del tape
+
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         self.timestep.assign_add(1)
@@ -353,6 +372,19 @@ class Model(tf.keras.Model):
             #     "w_sum": tf.reduce_sum(self.objective_weights)
             # },
         }
+
+    def test_step(self, data):
+        if not self.use_gradnorm:
+            return super().test_step(data)
+        x, y = data
+        y_pred = self(x, training=False)
+        loss = self.compute_loss(y=y, y_pred=y_pred)
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(loss)
+            else:
+                metric.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}
 
     def label(self):
         return "joint-" + self.mode
@@ -574,7 +606,7 @@ class Model(tf.keras.Model):
         self._last_fit_epochs = epochs
 
         if self.mode == "c+o":
-            o_n = self.norm_output(y["objectives"], adapt=True).numpy()
+            self.y_norm_ = self.norm_output(y["objectives"], adapt=True).numpy()
             if validation_data is not None:
                 validation_data = (
                     validation_data[0],
@@ -588,7 +620,7 @@ class Model(tf.keras.Model):
             return super().fit(
                 x,
                 {
-                    "objectives": o_n,
+                    "objectives": self.y_norm_,
                     "constraints": y["constraints"],
                 },
                 batch_size,
@@ -614,7 +646,7 @@ class Model(tf.keras.Model):
                 **kwargs,
             )
         else:
-            o_n = self.norm_output(y, adapt=True).numpy()
+            self.y_norm_ = self.norm_output(y, adapt=True).numpy()
             if validation_data is not None:
                 validation_data = (
                     validation_data[0],
@@ -622,7 +654,7 @@ class Model(tf.keras.Model):
                 )
             return super().fit(
                 x,
-                o_n,
+                self.y_norm_,
                 batch_size,
                 epochs,
                 verbose,
@@ -653,7 +685,7 @@ class Model(tf.keras.Model):
             elif method == "log":
                 pass
 
-        if method == "minmax":
+        if "minmax" in method:
             if inverse:
                 return (yR + 0.5) * (
                     self.max_std_yR - self.min_mean_yR

@@ -12,7 +12,7 @@ def preprocess(x, y, yC=None, remove_outliers=False, nan="remove"):
         # replace NaNs with maximum
         m = np.max(np.nan_to_num(y), axis=0)
         for c in range(y.shape[1]):
-            y[:, c] = np.nan_to_num(y[:, c], nan=max(1e3 * m[c], 1e5))
+            y[:, c] = np.nan_to_num(y[:, c], nan=2 * m[c])
     elif nan == "remove":
         r = ~np.any(np.isnan(y), axis=1)
         x = x[r]
@@ -31,7 +31,8 @@ def preprocess(x, y, yC=None, remove_outliers=False, nan="remove"):
         ylmean = np.mean(ylog, axis=0)
         ylstd = np.std(ylog, axis=0)
         zscores = (ylog - ylmean) / ylstd
-        outlier = np.any(np.abs(zscores) > float(remove_outliers), axis=1)
+        # filter values above the threshold (high outliers)
+        outlier = np.any(zscores > float(remove_outliers), axis=1)
         mask = ~outlier
 
     if yC is None:
