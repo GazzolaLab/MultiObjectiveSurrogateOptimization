@@ -25,6 +25,7 @@ def joint(
     feasibility_solving=False,
     feasibility_targets="objective",
     save_weights=True,
+    epochs="auto",
     iterations=[],
 ):
     """
@@ -128,9 +129,7 @@ def joint(
         )
     )
 
-    model.autofit(
-        x, y, yC, verbose=0, epochs=np.mean(model.autoepoch(x, y, yC, verbose=0))
-    )
+    model.autofit(x, y, yC, verbose=1, epochs=epochs)
 
     scores = model.autoeval(x, y, yC)
 
