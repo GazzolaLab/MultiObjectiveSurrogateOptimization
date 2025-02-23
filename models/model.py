@@ -468,8 +468,8 @@ class Model(tf.keras.Model):
     ):
         if epochs == "auto":
             m = self.autoepoch(x, y, yC, verbose=1)
-            print("Automatic epochs: ", m, " -> ", np.max(m))
-            epochs = np.max(m)
+            print("Automatic epochs: ", m, " -> ", np.mean(m))
+            epochs = np.mean(m)
         else:
             self.build(input_shape=x.shape)
 
