@@ -12,6 +12,25 @@ from sklearn.metrics import (
 )
 from scipy.stats import spearmanr
 from models.utils import preprocess
+from collections import deque
+
+
+class MovingAverageEarlyStopping(tf.keras.callbacks.EarlyStopping):
+    def __init__(self, window_size=5, **kwargs):
+        super().__init__(**kwargs)
+        self.window_size = window_size
+        self.loss_window = deque(maxlen=window_size)
+
+    def get_monitor_value(self, logs):
+        current_val = logs.get(self.monitor)
+        if current_val is None:
+            return None
+
+        self.loss_window.append(current_val)
+
+        if len(self.loss_window) == self.window_size:
+            return np.mean(self.loss_window)
+        return current_val
 
 
 huber_loss = tf.keras.losses.Huber()
@@ -165,6 +184,7 @@ class Model(tf.keras.Model):
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
         self.outlier_threshold = outlier_threshold
+        self.regression_loss = regression_loss
         self.exclude_infeasible = exclude_infeasible
         self.normalize_targets = normalize_targets
         if mode not in ["c+o", "c", "o"]:
@@ -204,40 +224,7 @@ class Model(tf.keras.Model):
 
         self.prepare_layers()
 
-        try:
-            objective_loss = {
-                "mae": "mae",
-                "mse": "mse",
-                "huber": huber_loss,
-                "logcosh": log_cosh_loss,
-                "weighted_logcosh": weighted_log_cosh_loss,
-                "distance_weighted_mse": distance_weighted_mse,
-                "relative_error": relative_error_loss,
-            }[regression_loss]
-        except KeyError:
-            objective_loss = self.objective_loss
-
-        if self.mode == "c+o":
-            loss = {
-                "objectives": objective_loss,
-                "constraints": "binary_crossentropy",
-            }
-            metrics = {
-                "objectives": ["mae"],
-                "constraints": [acc],
-            }
-        elif self.mode == "c":
-            loss = "binary_crossentropy"
-            metrics = acc
-        elif self.mode == "o":
-            loss = objective_loss
-            metrics = ["mae"]
-
-        self.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            loss=loss,
-            metrics=metrics,
-        )
+        self.autocompile()
 
         self.inverse_input_sample = tf.Variable(
             initial_value=np.zeros([1, self.num_parameters]),
@@ -433,6 +420,42 @@ class Model(tf.keras.Model):
             nan=nan,
         )
 
+    def autocompile(self):
+        try:
+            objective_loss = {
+                "mae": "mae",
+                "mse": "mse",
+                "huber": huber_loss,
+                "logcosh": log_cosh_loss,
+                "weighted_logcosh": weighted_log_cosh_loss,
+                "distance_weighted_mse": distance_weighted_mse,
+                "relative_error": relative_error_loss,
+            }[self.regression_loss]
+        except KeyError:
+            objective_loss = self.objective_loss
+
+        if self.mode == "c+o":
+            loss = {
+                "objectives": objective_loss,
+                "constraints": "binary_crossentropy",
+            }
+            metrics = {
+                "objectives": ["mae"],
+                "constraints": [acc],
+            }
+        elif self.mode == "c":
+            loss = "binary_crossentropy"
+            metrics = acc
+        elif self.mode == "o":
+            loss = objective_loss
+            metrics = ["mae"]
+
+        self.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+            loss=loss,
+            metrics=metrics,
+        )
+
     def autofit(
         self,
         x,
@@ -444,8 +467,9 @@ class Model(tf.keras.Model):
         **kwargs,
     ):
         if epochs == "auto":
-            m = self.autoepoch(x, y, yC, verbose=0)
-            epochs = np.mean(m)
+            m = self.autoepoch(x, y, yC, verbose=1)
+            print("Automatic epochs: ", m, " -> ", np.max(m))
+            epochs = np.max(m)
         else:
             self.build(input_shape=x.shape)
 
@@ -477,6 +501,10 @@ class Model(tf.keras.Model):
             epochs=epochs,
             batch_size=batch_size,
             verbose=verbose,
+            callbacks=[
+                tf.keras.callbacks.TerminateOnNaN(),
+                # tf.keras.callbacks.ReduceLROnPlateau(monitor="loss"),
+            ],
             **kwargs,
         )
 
@@ -498,7 +526,7 @@ class Model(tf.keras.Model):
         return self.eval(x, Y, verbose=verbose)
 
     def autoepoch(
-        self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="time_series"
+        self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="kfold"
     ):
         if x.shape[0] < n_splits * 2:
             return [1]
@@ -517,7 +545,7 @@ class Model(tf.keras.Model):
 
         kf = {"kfold": KFold, "time_series": TimeSeriesSplit}[cv](n_splits=n_splits)
         stopped_after_epochs = []
-        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 2500))
+        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 10000))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
 
         def p(*args, **kwargs):
@@ -531,6 +559,7 @@ class Model(tf.keras.Model):
         p("Autoepoch cross-validation ...")
         for s, (train_index, val_index) in enumerate(kf.split(x)):
             p(f"Split {s}")
+            self.autocompile()
             self.set_weights(initial_weights)
 
             X_train, X_val = x[train_index], x[val_index]
@@ -566,7 +595,7 @@ class Model(tf.keras.Model):
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
                             monitor=mon,
-                            patience=int(epoch_increment / 2),
+                            patience=250,
                             restore_best_weights=False,
                             mode="min",
                         )
@@ -575,10 +604,20 @@ class Model(tf.keras.Model):
                                 "val_objectives_loss",  # "val_constraints_loss"
                             ]
                             if self.mode == "c+o"
-                            else ["val_loss"]
+                            else ["val_mae"]  # "val_loss"
                         )
                     ]
-                    + [tf.keras.callbacks.TerminateOnNaN()],
+                    + [
+                        tf.keras.callbacks.TerminateOnNaN(),
+                        # tf.keras.callbacks.ReduceLROnPlateau(
+                        #     factor=0.5,
+                        #     monitor=(
+                        #         "val_objectives_loss"
+                        #         if self.mode == "c+o"
+                        #         else "val_loss"
+                        #     )
+                        # ),
+                    ],
                     verbose=verbose,
                     initial_epoch=total_epochs,
                 )
@@ -593,6 +632,7 @@ class Model(tf.keras.Model):
             p(f"Stopped after {total_epochs} for split {s}")
             stopped_after_epochs.append(total_epochs)
 
+        self.autocompile()
         self.set_weights(initial_weights)
 
         return stopped_after_epochs
