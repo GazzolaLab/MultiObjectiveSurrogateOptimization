@@ -767,11 +767,11 @@ class Model(tf.keras.Model):
             bottom = tf.reduce_max(self.min_mean_yR)
             if inverse:
                 exps = tf.exp(yR) - 1
-                scaled = (exps - bottom) / (top - bottom)
+                scaled = (exps - bottom) / (top - bottom + tf.keras.backend.epsilon())
                 return scaled * (self.max_std_yR - self.min_mean_yR) + self.min_mean_yR
             else:
                 normalized = (yR - self.min_mean_yR) / (
-                    self.max_std_yR - self.min_mean_yR
+                    self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon()
                 )
                 upscaled = normalized * (top - bottom) + bottom
                 return tf.math.log1p(upscaled)
