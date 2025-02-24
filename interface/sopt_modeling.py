@@ -117,7 +117,8 @@ class Modeling(Sopt):
         }
 
     def plot_features(
-        self, feature_selection="-np.std(y, axis=1)", metadata=None, fontsize="large"
+            self, feature_selection="-np.std(y, axis=1)", metadata=None, fontsize="large",
+            fig_kwargs={'figsize': (15, 8)}
     ):
         from matplotlib import pyplot as plt
 
@@ -136,7 +137,7 @@ class Modeling(Sopt):
             metadata = self.load_h5()["metadata"]
 
         # gridspec inside gridspec
-        fig = plt.figure(constrained_layout=True, figsize=(15, 4))
+        fig = plt.figure(constrained_layout=True, **fig_kwargs)
         subfigs = fig.subfigures(1, 2, wspace=0.07, width_ratios=[1.1, 2])
 
         axsLeft = subfigs[0].subplots(3, 1, sharey=False)
