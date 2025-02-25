@@ -333,6 +333,12 @@ class Dmosopt(Component):
         with multiprocessing.Pool(processes=processes) as pool:
             return pool.map(self.evaluate_objective_at, samples)
 
+    def bounds_normalize(self, x):
+        q = np.zeros_like(x)
+        for i in range(x.shape[-1]):
+            q[:, i] = (x[:, i] - self.xlb[i]) / (self.xub[i] - self.xlb[i])
+        return q
+
     @property
     def output_filepath(self) -> str:
         return os.path.abspath(self.local_directory("dmosopt.h5"))
@@ -463,8 +469,10 @@ class Dmosopt(Component):
 
         result = []
         for i in include:
-            if i == "x":
+            if i.lower() == "x":
                 q = data["parameters"].to_numpy()[mask]
+                if i == "X":
+                    q = self.bounds_normalize(q)
             elif i == "y":
                 q = data["objectives"].to_numpy()[mask]
             elif i == "f":
@@ -602,14 +610,14 @@ class Dmosopt(Component):
         region: list | tuple | None = None,
         sort_by: str = "-np.std(y, axis=1)",
         as_dataframes: bool = True,
-        epsilon="auto",
+        epsilon=None,
     ):
         data = self.load_h5()
 
         if region is None:
-            if len(data["epochs"]) > 10000:
+            if len(data["epochs"]) > 5000:
                 # optimize for speed since best solutions will be found in the last epochs
-                region = slice(-10000, None)
+                region = slice(-5000, None)
             else:
                 region = slice(None)
         else:
@@ -724,6 +732,19 @@ class Dmosopt(Component):
             pf=pf,
             normalize=[[0.0] * len(nadir), nadir],
         )
+
+    def norm_hv_region(self, nadir, region):
+        if region[1] > 5000:
+            # optimize for speed
+            region = [region[1] - 5000, region[1]]
+        pf = self.get_best(region=list(region))["y"].to_numpy().tolist()
+        return self.norm_hv(nadir, pf=pf)
+
+    def norm_hv_epochs(self, nadir, from_zero=True):
+        return [
+            self.norm_hv_region(nadir, region)
+            for region in self.epoch_ranges(from_zero=from_zero)
+        ]
 
     def c_metric(self, ref_front, pf=None):
         """

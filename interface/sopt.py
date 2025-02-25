@@ -56,6 +56,10 @@ class Sopt(Dmosopt):
     def m(self):
         return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
 
+    @property
+    def trial(self):
+        return self.context.predicate.get("trial", 0)
+
     def get_model(self, name, **model_options):
         if "joint" in name:
             if "mlp" in name:
@@ -78,7 +82,7 @@ class Sopt(Dmosopt):
 
         from models.wrapper import Wrapper
 
-        return Wrapper(name, self.xlb, self.xub)
+        return Wrapper(name, self.xlb, self.xub, **model_options)
 
     def label(self):
         m = self.config.dopt_params.opt_id.replace("dmosopt_", "") + "::" + self.m
@@ -91,13 +95,28 @@ class Sopt(Dmosopt):
 
         return m + "[" + fs + "]"
 
+    def version_opt(self):
+        return {
+            "dopt_params": {
+                "optimizer_name": "models.opt.Opt",
+                "optimizer_kwargs": {},
+                "num_generations": 1,
+            }
+        }
+
     def version_joint_model(self, **kwargs):
         if kwargs.get("mode", "c+o") not in ["c+o", "c", "o"]:
             raise ValueError("Invalid mode")
+        params = {}
+        if kwargs.get("sgrad", False):
+            params = {"num_generations": 1}
+            if kwargs.get("targets", False):
+                params["optimizer_kwargs"] = dict(targets=kwargs.pop("targets"))
         return {
             "dopt_params": {
                 "surrogate_custom_training": "models.ops.joint",
                 "surrogate_custom_training_kwargs": kwargs,
+                **params,
             }
         }
 

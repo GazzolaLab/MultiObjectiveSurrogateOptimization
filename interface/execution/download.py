@@ -7,6 +7,8 @@ from rich.table import Table
 class StorageDownload(Execution):
     class Config:
         related: int = 0
+        force: bool = False
+        pick: int = -1
 
     def commit(self):
         return self
@@ -18,7 +20,7 @@ class StorageDownload(Execution):
     def __call__(self) -> None:
         storage = Storage.get()
 
-        table = Table(title=f"Retrieving from {storage}")
+        table = Table(title=f"Retrieving from {storage} at {self.config.pick}")
         table.add_column("Component", style="cyan", no_wrap=True)
         table.add_column("Status", style="blue")
         table.add_column("Label")
@@ -31,7 +33,10 @@ class StorageDownload(Execution):
 
         for executable in self.executables:
             status = ""
-            cached = executable.cached()
+            if self.config.force:
+                cached = False
+            else:
+                cached = executable.cached()
 
             found = []
             if cached:
@@ -41,9 +46,9 @@ class StorageDownload(Execution):
                 if not found:
                     status = "NOT FOUND"
                 else:
-                    status = f"FOUND ({len(found)}) -> {found[0]}"
+                    status = f"FOUND ({len(found)}) -> {found[self.config.pick]}"  # ",".join(found)
 
-                    retrievals.append(found[0])
+                    retrievals.append(found[self.config.pick])
 
             table.add_row(
                 pb(len(found) > 0) + " " + repr(executable),

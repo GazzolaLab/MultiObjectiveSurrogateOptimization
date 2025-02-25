@@ -1,0 +1,79 @@
+from dmosopt.MOEA import MOEA, remove_worst
+from typing import Optional, Any, Dict, Tuple
+import numpy as np
+
+
+class Opt(MOEA):
+    def __init__(
+        self,
+        popsize: int,
+        nInput: int,
+        nOutput: int,
+        model: Optional[Any],
+        targets="objective",
+        **kwargs,
+    ):
+        super().__init__(
+            name="ModelOpt",
+            popsize=popsize,
+            nInput=nInput,
+            nOutput=nOutput,
+            **kwargs,
+        )
+        self.model = model
+        self.objectives = None
+        self.parameters = None
+        self.x = None
+        self.y = None
+        self.targets = targets
+
+    def get_population_strategy(self) -> Tuple[np.ndarray, np.ndarray]:
+        return self.parameters.copy(), self.objectives.copy()
+
+    def initialize_state(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        bounds: np.ndarray,
+        local_random: Optional[np.random.Generator] = None,
+        **params,
+    ):
+        self.x = x
+        self.y = y
+        self.parameters, self.objectives, _ = remove_worst(x, y, self.popsize)
+
+    def generate_strategy(self, **params):
+        if "|" in self.targets:
+            split = len(self.parameters) // 2
+            positive, _ = self.model.objective.make_feasible(
+                self.parameters[:split, :],
+                targets=self.targets.split("|")[0],
+                verbose=1,
+            )
+
+            negative, _ = self.model.objective.make_feasible(
+                self.parameters[split:, :],
+                targets=self.targets.split("|")[1],
+                verbose=1,
+            )
+
+            samples = np.concatenate([positive, negative], axis=0)
+
+            assert len(samples) == len(self.parameters)
+        else:
+            samples, _ = self.model.objective.make_feasible(
+                self.parameters,
+                targets=self.targets,
+                verbose=1,
+            )
+
+        return samples, None
+
+    def update_strategy(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        state: Dict[Any, Any],
+        **params,
+    ):
+        self.parameters, self.objectives, _ = remove_worst(x, y, self.popsize)

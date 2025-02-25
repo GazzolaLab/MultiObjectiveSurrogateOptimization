@@ -1,8 +1,9 @@
 import numpy as np
 from machinable.utils import save_file
 import os
-import dmosopt.MOASMO as opt
+from dmosopt.MOASMO import xinit
 from pprint import pprint
+from models.opt import Opt
 
 
 def joint(
@@ -16,14 +17,15 @@ def joint(
     options,
     # -
     mode="c+o",
+    sgrad=False,
     objectives=True,
     constraints=False,
     sensitivity=False,
+    backbone="resnet",
     feasibility_solving=False,
-    feasibility_max_iterations=50,
-    feasibility_use_joint_loss=True,
-    feasibility_max_steps_filter=True,
+    feasibility_targets="objective",
     save_weights=True,
+    epochs="auto",
     iterations=[],
 ):
     """
@@ -33,6 +35,7 @@ def joint(
 
     - mode="c+o"
         What information to use when training the model (c=constraints, o=objectives, c+o=both)
+    - sgrad=False
     - objectives=True
     - constraints=False
     - sensitivity=False
@@ -41,16 +44,15 @@ def joint(
         dmosopt options. For example, if you specify `"surrogate_method_name": 'gpr'`
         and set `constraints=True`, the MLP model will be used for the constraints
         but to predict the objective the usual `gpr` surrogate will be used.
+    - backbone='resnet'
+        Model backbone; 'resnet', 'transformer', 'fttransfomer'
     - feasibility_solving=False
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
-        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
-    - feasibility_max_iterations=50
-        Only applies if feasibility_solving is True; number of iterations
-    - feasibility_use_joint_loss=True
-        Only applies if feasibility_solving is True; whether to use joint loss
-    - feasibility_max_steps_filter=True
-        Only applies if feasibility_solving is True; optional early stopping
+        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4.
+        Feasibility options are ignored when using sgrad
+    - feasibility_targets="objective"
+        Only applies if feasibility_solving is True;
     - save_weights=True
         Whether to save a checkpoint of the trained model in each epoch
     """
@@ -64,6 +66,11 @@ def joint(
     if C is not None:
         yC = (C > 0).astype(int)
 
+    def _reduction(s):
+        a = tf.abs(s)
+        n = a / tf.reduce_max(a, axis=0)
+        return tf.reduce_mean(n, axis=0)
+
     class _Model:
         def __init__(self, model) -> None:
             self._wrapped = model
@@ -76,11 +83,6 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            def _reduction(s):
-                a = tf.abs(s)
-                n = a / tf.reduce_max(a, axis=0)
-                return tf.reduce_mean(n, axis=0)
-
             sens = self.sensitivity(x, _reduction)
             if isinstance(sens, dict):
                 # disregard constraint gradients
@@ -107,10 +109,17 @@ def joint(
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
 
-    from models.resnet import Resnet
+    if backbone == "resnet":
+        from models.resnet import Resnet as Backbone
+    elif backbone == "transformer":
+        from models.transformer import Transformer as Backbone
+    elif backbone == "fttransformer":
+        from models.fttransformer import FTTransformer as Backbone
+    else:
+        raise ValueError(f"Invalid backbone: {backbone}")
 
     model = _Model(
-        Resnet(
+        Backbone(
             num_parameters=Xinit.shape[1],
             num_constraints=C.shape[1] if C is not None else 0,
             num_objectives=Yinit.shape[1],
@@ -120,13 +129,12 @@ def joint(
         )
     )
 
-    model.autofit(
-        x, y, yC, verbose=0, epochs=np.mean(model.autoepoch(x, y, yC, verbose=0))
-    )
+    model.autofit(x, y, yC, verbose=1, epochs=epochs)
 
     scores = model.autoeval(x, y, yC)
 
     scores["num_samples"] = x.shape[0]
+    scores["iteration"] = len(iterations)
 
     if isinstance(feasibility_solving, str):
         # activate on a certain condition
@@ -141,31 +149,54 @@ def joint(
             # we do not use the ranking
             self._wrapped.x_distance_metrics = None
 
+        @property
+        def population_objectives(self):
+            return self.get_population_strategy()
+
+        def get_population_strategy(self):
+            if feasibility_solving:
+                x_prime = np.zeros_like(self.parameters)
+                split = len(x_prime) // 2
+                # elite
+                x_prime[:split, :] = self.parameters[:split, :]
+                # exploration
+                x_prime[split:, :] = self.sampling_modifier(self.parameters[split:, :])
+
+                return x_prime, self.objectives.copy()
+
+            return self.parameters.copy(), self.objectives.copy()
+
         def generate_initial(self, *args, **kwargs):
             x = self._wrapped.generate_initial(*args, **kwargs)
 
-            x = self.sampling_modifier(x)
+            # x = self.sampling_modifier(x)
 
             return x
 
-        def generate_strategy(self, *args, **kwargs):
-            x_gen, state_gen = self._wrapped.generate_strategy(*args, **kwargs)
+        def generate(
+            self,
+            **params,
+        ):
+            """Generate new parameter candidates to evaluate next."""
+            # Generate parameters to be evaluated based on strategy-specific method
+            x, state = self._wrapped.generate_strategy(**params)
 
-            x_gen = self.sampling_modifier(x_gen)
+            # x = self.sampling_modifier(x)
 
-            return x_gen, state_gen
+            # Clip proposal candidates into allowed range
+            x_clipped = np.clip(x, self.bounds[:, 0], self.bounds[:, 1])
+            return x_clipped, state
 
         def sampling_modifier(self, samples):
             if not feasibility_solving:
                 return samples
+
             x_transformed, _ = model.make_feasible(
                 samples,
-                learning_rate=0.1,
-                transform=[(l, u) for l, u in zip(xlb, xub)],
-                max_iterations=feasibility_max_iterations,
-                max_steps_filter=feasibility_max_steps_filter,
-                use_joint_loss=feasibility_use_joint_loss,
+                feasibility_targets=feasibility_targets,
+                verbose=1,
             )
+
             return x_transformed
 
         def __getattr__(self, name):
@@ -184,7 +215,7 @@ def joint(
         iterations.append(0)
 
     return (
-        Optimizer.wrapped,
+        Optimizer.wrapped if not sgrad else Opt,
         model if objectives else None,
         model if constraints else None,
         model if sensitivity else None,
@@ -203,10 +234,11 @@ def dynamic_sampling(
     stop_condition="convergence_condition",
     convergence_condition="iteration > 3 and max(recent('ecov', 3)) < 0.1",
     mode="c+o",
+    backbone="resnet",
     optimizer_sampling=None,
     feasibility_solving=False,
     feasibility_max_iterations=50,
-    feasibility_use_joint_loss=True,
+    feasibility_targets="objective distance",
     feasibility_max_steps_filter=True,
     verbose=1,
     # ---
@@ -224,6 +256,8 @@ def dynamic_sampling(
     - mode="c+o"
         What information to use when training the model (c=constraints, o=objectives, c+o=both)
         Add `!` to force mode even if most of the constraint samples are equal
+    - backbone='resnet'
+        Model backbone; 'resnet', 'transformer', 'fttransfomer'
     - optimizer_sampling=None
         Whether to use the optimizer to suggest samples
     - feasibility_solving=False
@@ -232,8 +266,8 @@ def dynamic_sampling(
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
     - feasibility_max_iterations=50
         Only applies if feasibility_solving is True; number of iterations
-    - feasibility_use_joint_loss=True
-        Only applies if feasibility_solving is True; whether to use joint loss
+    - feasibility_targets='objective distance'
+        Only applies if feasibility_solving is True
     - feasibility_max_steps_filter=True
         Only applies if feasibility_solving is True; optional early stopping
     """
@@ -284,9 +318,16 @@ def dynamic_sampling(
                 print(f"Using o-mode (overriding {mode}-mode)")
             mode = "o"
 
-    from models.resnet import Resnet
+    if backbone == "resnet":
+        from models.resnet import Resnet as Backbone
+    elif backbone == "transformer":
+        from models.transformer import Transformer as Backbone
+    elif backbone == "fttransformer":
+        from models.fttransformer import FTTransformer as Backbone
+    else:
+        raise ValueError(f"Invalid backbone: {backbone}")
 
-    model = Resnet(
+    model = Backbone(
         num_parameters=x_completed.shape[1],
         num_constraints=c_completed.shape[1],
         num_objectives=y_completed.shape[1],
@@ -391,7 +432,7 @@ def dynamic_sampling(
             candidate_samples.append(x_opt)
 
     if (draw := samples_per_iteration - len(candidate_samples)) > 0:
-        new_samples = opt.xinit(
+        new_samples = xinit(
             samples_per_iteration,
             sampler["param_names"],
             sampler["xlb"],
@@ -416,7 +457,7 @@ def dynamic_sampling(
         learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
-        use_joint_loss=feasibility_use_joint_loss,
+        feasibility_targets=feasibility_targets,
     )
 
     if verbose > 0:

@@ -12,6 +12,25 @@ from sklearn.metrics import (
 )
 from scipy.stats import spearmanr
 from models.utils import preprocess
+from collections import deque
+
+
+class MovingAverageEarlyStopping(tf.keras.callbacks.EarlyStopping):
+    def __init__(self, window_size=5, **kwargs):
+        super().__init__(**kwargs)
+        self.window_size = window_size
+        self.loss_window = deque(maxlen=window_size)
+
+    def get_monitor_value(self, logs):
+        current_val = logs.get(self.monitor)
+        if current_val is None:
+            return None
+
+        self.loss_window.append(current_val)
+
+        if len(self.loss_window) == self.window_size:
+            return np.mean(self.loss_window)
+        return current_val
 
 
 huber_loss = tf.keras.losses.Huber()
@@ -106,6 +125,28 @@ def spearmanr_metric(y_true, y_pred):
     return np.mean(spearman_scores)
 
 
+def distance_maximization_loss(input_sample, X_, weight=1.0, epsilon=1e-12):
+    # input_sample shape: [batch_size, num_parameters]
+    # X_ shape: [n_samples, num_parameters]
+
+    # broad cast line up
+    input_expanded = tf.expand_dims(
+        input_sample, axis=1
+    )  # [batch_size, 1, num_parameters]
+    X_expanded = tf.expand_dims(X_, axis=0)  # [1, n_samples, num_parameters]
+
+    # pairwise distances => [batch_size, n_samples]
+    distances = tf.sqrt(
+        tf.reduce_sum(tf.square(input_expanded - X_expanded), axis=-1) + epsilon
+    )
+
+    batch_distances = tf.reduce_mean(distances, axis=1)  # [batch_size]
+
+    loss = -tf.reduce_mean(batch_distances)  # []
+
+    return weight * loss
+
+
 class BoundsNormalization(tf.keras.layers.Layer):
     def __init__(self, xlb, xub, **kwargs):
         super().__init__(**kwargs)
@@ -132,7 +173,7 @@ class Model(tf.keras.Model):
         learning_rate=0.001,
         outlier_threshold=0,
         exclude_infeasible=False,
-        normalize_targets=True,
+        normalize_targets="range",
         gradnorm=False,
         regression_loss="mse",
         **kwargs,
@@ -143,6 +184,7 @@ class Model(tf.keras.Model):
         self.num_objectives = num_objectives
         self.learning_rate = learning_rate
         self.outlier_threshold = outlier_threshold
+        self.regression_loss = regression_loss
         self.exclude_infeasible = exclude_infeasible
         self.normalize_targets = normalize_targets
         if mode not in ["c+o", "c", "o"]:
@@ -151,6 +193,13 @@ class Model(tf.keras.Model):
         self.mode = mode
         self.xlb = xlb
         self.xub = xub
+        self.X_ = None
+        self.X_raw_ = None
+        self.y_ = None
+        self.y_raw_ = None
+        self.y_norm_ = None
+        self.yC_ = None
+        self.yC_raw_ = None
 
         if xlb is not None and xub is not None:
             self.input_norm_layer = BoundsNormalization(xlb, xub)
@@ -159,6 +208,7 @@ class Model(tf.keras.Model):
 
         self.gradnorm_layers = []
 
+        self.timestep = None
         if self.use_gradnorm:
             self.objective_weights = tf.Variable(
                 [1] * self.num_objectives,
@@ -174,36 +224,7 @@ class Model(tf.keras.Model):
 
         self.prepare_layers()
 
-        objective_loss = {
-            "mse": "mse",
-            "huber": huber_loss,
-            "logcosh": log_cosh_loss,
-            "weighted_logcosh": weighted_log_cosh_loss,
-            "distance_weighted_mse": distance_weighted_mse,
-            "relative_error": relative_error_loss,
-        }[regression_loss]
-
-        if self.mode == "c+o":
-            loss = {
-                "objectives": objective_loss,
-                "constraints": "binary_crossentropy",
-            }
-            metrics = {
-                "objectives": ["mae"],
-                "constraints": [acc],
-            }
-        elif self.mode == "c":
-            loss = "binary_crossentropy"
-            metrics = acc
-        elif self.mode == "o":
-            loss = objective_loss
-            metrics = ["mae"]
-
-        self.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            loss=loss,
-            metrics=metrics,
-        )
+        self.autocompile()
 
         self.inverse_input_sample = tf.Variable(
             initial_value=np.zeros([1, self.num_parameters]),
@@ -226,6 +247,37 @@ class Model(tf.keras.Model):
         )
 
         self._last_fit_epochs = -1
+
+    def objective_loss(self, y_true, y_pred, alpha=1, beta=0.01, verbose=False):
+        mins = tf.reduce_min(self.y_norm_, axis=0)
+        maxs = tf.reduce_max(self.y_norm_, axis=0)
+
+        weights = 1  # / (maxs + 1e-7)
+
+        if verbose:
+            print("mins", mins)
+            print("maxs", maxs)
+
+            print(y_true, "y_true")
+            print(y_pred, "y_pred")
+
+        # move to floor
+        ytrue = y_true - mins
+        ypred = y_pred - mins
+
+        if verbose:
+            print(ytrue, "ytrue")
+            print(ypred, "ypred")
+
+        # high weights for low values
+        rerr = tf.abs(ytrue - ypred) / (alpha * tf.abs(ytrue) + beta)
+
+        if verbose:
+            print(rerr, "rerr")
+
+        rerr_ = tf.reduce_mean(rerr, axis=0)
+
+        return tf.reduce_mean(weights * rerr_)
 
     def train_step(self, data):
         if not self.use_gradnorm:
@@ -295,6 +347,8 @@ class Model(tf.keras.Model):
             trainable_vars = self.trainable_variables
             gradients = tape.gradient(total_loss, trainable_vars)
 
+        del tape
+
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
         self.timestep.assign_add(1)
@@ -325,6 +379,19 @@ class Model(tf.keras.Model):
             # },
         }
 
+    def test_step(self, data):
+        if not self.use_gradnorm:
+            return super().test_step(data)
+        x, y = data
+        y_pred = self(x, training=False)
+        loss = self.compute_loss(y=y, y_pred=y_pred)
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(loss)
+            else:
+                metric.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}
+
     def label(self):
         return "joint-" + self.mode
 
@@ -353,6 +420,42 @@ class Model(tf.keras.Model):
             nan=nan,
         )
 
+    def autocompile(self):
+        try:
+            objective_loss = {
+                "mae": "mae",
+                "mse": "mse",
+                "huber": huber_loss,
+                "logcosh": log_cosh_loss,
+                "weighted_logcosh": weighted_log_cosh_loss,
+                "distance_weighted_mse": distance_weighted_mse,
+                "relative_error": relative_error_loss,
+            }[self.regression_loss]
+        except KeyError:
+            objective_loss = self.objective_loss
+
+        if self.mode == "c+o":
+            loss = {
+                "objectives": objective_loss,
+                "constraints": "binary_crossentropy",
+            }
+            metrics = {
+                "objectives": ["mae"],
+                "constraints": [acc],
+            }
+        elif self.mode == "c":
+            loss = "binary_crossentropy"
+            metrics = acc
+        elif self.mode == "o":
+            loss = objective_loss
+            metrics = ["mae"]
+
+        self.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
+            loss=loss,
+            metrics=metrics,
+        )
+
     def autofit(
         self,
         x,
@@ -364,12 +467,17 @@ class Model(tf.keras.Model):
         **kwargs,
     ):
         if epochs == "auto":
-            m = self.autoepoch(x, y, yC, verbose=0)
+            m = self.autoepoch(x, y, yC, verbose=1)
+            print("Automatic epochs: ", m, " -> ", np.mean(m))
             epochs = np.mean(m)
         else:
             self.build(input_shape=x.shape)
 
         epochs = int(epochs)
+
+        self.X_raw_ = x
+        self.y_raw_ = y
+        self.yC_raw_ = yC
 
         x, y, yC = self.preprocess(x, y, yC)
 
@@ -393,6 +501,10 @@ class Model(tf.keras.Model):
             epochs=epochs,
             batch_size=batch_size,
             verbose=verbose,
+            callbacks=[
+                tf.keras.callbacks.TerminateOnNaN(),
+                # tf.keras.callbacks.ReduceLROnPlateau(monitor="loss"),
+            ],
             **kwargs,
         )
 
@@ -414,7 +526,7 @@ class Model(tf.keras.Model):
         return self.eval(x, Y, verbose=verbose)
 
     def autoepoch(
-        self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="time_series"
+        self, x, y, yC, n_splits=3, timeout_samples=1e8, verbose=1, cv="kfold"
     ):
         if x.shape[0] < n_splits * 2:
             return [1]
@@ -427,13 +539,13 @@ class Model(tf.keras.Model):
                 feasible = feasible.ravel()
                 x = x[feasible, :]
                 y = y[feasible, :]
-            
+
         if x.shape[0] < n_splits * 2:
             return [1]
 
         kf = {"kfold": KFold, "time_series": TimeSeriesSplit}[cv](n_splits=n_splits)
         stopped_after_epochs = []
-        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 2500))
+        timeout_epochs = max(25, min(round(timeout_samples / x.shape[0]), 10000))
         epoch_increment = max(10, round(timeout_epochs / 10.0))
 
         def p(*args, **kwargs):
@@ -447,6 +559,7 @@ class Model(tf.keras.Model):
         p("Autoepoch cross-validation ...")
         for s, (train_index, val_index) in enumerate(kf.split(x)):
             p(f"Split {s}")
+            self.autocompile()
             self.set_weights(initial_weights)
 
             X_train, X_val = x[train_index], x[val_index]
@@ -482,17 +595,29 @@ class Model(tf.keras.Model):
                     callbacks=[
                         tf.keras.callbacks.EarlyStopping(
                             monitor=mon,
-                            patience=int(epoch_increment / 2),
+                            patience=250,
                             restore_best_weights=False,
                             mode="min",
                         )
                         for mon in (
-                            ["val_objectives_loss", "val_constraints_loss"]
+                            [
+                                "val_objectives_loss",  # "val_constraints_loss"
+                            ]
                             if self.mode == "c+o"
-                            else ["val_loss"]
+                            else ["val_mae"]  # "val_loss"
                         )
                     ]
-                    + [tf.keras.callbacks.TerminateOnNaN()],
+                    + [
+                        tf.keras.callbacks.TerminateOnNaN(),
+                        # tf.keras.callbacks.ReduceLROnPlateau(
+                        #     factor=0.5,
+                        #     monitor=(
+                        #         "val_objectives_loss"
+                        #         if self.mode == "c+o"
+                        #         else "val_loss"
+                        #     )
+                        # ),
+                    ],
                     verbose=verbose,
                     initial_epoch=total_epochs,
                 )
@@ -507,45 +632,116 @@ class Model(tf.keras.Model):
             p(f"Stopped after {total_epochs} for split {s}")
             stopped_after_epochs.append(total_epochs)
 
+        self.autocompile()
         self.set_weights(initial_weights)
 
         return stopped_after_epochs
 
-    def fit(self, x=None, y=None, *args, epochs=1, **kwargs):
+    def fit(
+        self,
+        x=None,
+        y=None,
+        batch_size=None,
+        epochs=1,
+        verbose="auto",
+        callbacks=None,
+        validation_split=0.0,
+        validation_data=None,
+        *args,
+        **kwargs,
+    ):
+        self.X_ = x
+        if self.mode == "c+o":
+            self.y_ = y["objectives"]
+            self.yC_ = y["constraints"]
+        elif self.mode == "c":
+            self.y_ = None
+            self.yC_ = y
+        elif self.mode == "o":
+            self.y_ = y
+            self.yC_ = None
+
+        if self.timestep is not None:
+            self.timestep.assign(0)
+
         # normalize inputs
         self.input_norm_layer.adapt(x)
 
         self._last_fit_epochs = epochs
 
         if self.mode == "c+o":
+            self.y_norm_ = self.norm_output(y["objectives"], adapt=True).numpy()
+            if validation_data is not None:
+                validation_data = (
+                    validation_data[0],
+                    {
+                        "objectives": self.norm_output(
+                            validation_data[1]["objectives"]
+                        ).numpy(),
+                        "constraints": validation_data[1]["constraints"],
+                    },
+                )
             return super().fit(
                 x,
                 {
-                    "objectives": self.norm_output(y["objectives"], adapt=True).numpy(),
+                    "objectives": self.y_norm_,
                     "constraints": y["constraints"],
                 },
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
                 *args,
-                epochs=epochs,
                 **kwargs,
             )
         elif self.mode == "c":
-            return super().fit(x, y, *args, epochs=epochs, **kwargs)
-        else:
             return super().fit(
                 x,
-                self.norm_output(y, adapt=True).numpy(),
+                y,
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
                 *args,
-                epochs=epochs,
+                **kwargs,
+            )
+        else:
+            self.y_norm_ = self.norm_output(y, adapt=True).numpy()
+            if validation_data is not None:
+                validation_data = (
+                    validation_data[0],
+                    self.norm_output(validation_data[1]).numpy(),
+                )
+            return super().fit(
+                x,
+                self.y_norm_,
+                batch_size,
+                epochs,
+                verbose,
+                callbacks,
+                validation_split,
+                validation_data,
+                *args,
                 **kwargs,
             )
 
-    def norm_output(self, yR, inverse=False, adapt=False, method="log"):
-        if not self.normalize_targets:
+    def norm_output(self, yR, inverse=False, adapt=False, method=None):
+        if method is None:
+            method = self.normalize_targets
+
+        if method is False:
             return tf.constant(yR)
 
         if adapt:
-            if method == "minmax":
-                self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
+            if "max" in method or method == "range":
+                if "0" in method:
+                    self.min_mean_yR.assign(np.zeros([yR.shape[1]]))
+                else:
+                    self.min_mean_yR.assign(np.min(yR, axis=0))
                 self.max_std_yR.assign(np.max(yR, axis=0))
             elif method == "standard":
                 self.min_mean_yR.assign(np.mean(yR, axis=0))
@@ -553,16 +749,32 @@ class Model(tf.keras.Model):
             elif method == "log":
                 pass
 
-        if method == "minmax":
+        if "max" in method:
+            centering = 0.0
+            if "c" in method:
+                centering = 0.5
             if inverse:
-                return (yR + 0.5) * (
+                return (yR + centering) * (
                     self.max_std_yR - self.min_mean_yR
                 ) + self.min_mean_yR
             else:
                 return (
                     (yR - self.min_mean_yR)
                     / (self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon())
-                ) - 0.5
+                ) - centering
+        elif method == "range":
+            top = tf.reduce_max(self.max_std_yR)
+            bottom = tf.reduce_max(self.min_mean_yR)
+            if inverse:
+                exps = tf.exp(yR) - 1
+                scaled = (exps - bottom) / (top - bottom + tf.keras.backend.epsilon())
+                return scaled * (self.max_std_yR - self.min_mean_yR) + self.min_mean_yR
+            else:
+                normalized = (yR - self.min_mean_yR) / (
+                    self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon()
+                )
+                upscaled = normalized * (top - bottom) + bottom
+                return tf.math.log1p(upscaled)
         elif method == "standard":
             if inverse:
                 return yR * self.max_std_yR + self.min_mean_yR
@@ -570,16 +782,18 @@ class Model(tf.keras.Model):
                 return (yR - self.min_mean_yR) / (
                     self.max_std_yR + tf.keras.backend.epsilon()
                 )
-        elif method == "log":
+        elif "log" in method:
             if inverse:
+                if method == "log_":
+                    return tf.constant(yR)
                 return tf.exp(yR) - 1
             else:
                 return tf.math.log1p(yR)
         else:
-            raise ValueError("Invalid scaling method. Use 'minmax' or 'standard'.")
+            raise ValueError(f"Invalid scaling method: {method}.")
 
     def get_output_norm(self):
-        if not self.normalize_targets:
+        if self.normalize_targets is False:
             return None
 
         return self.min_mean_yR.numpy().tolist(), self.max_std_yR.numpy().tolist()
@@ -715,15 +929,20 @@ class Model(tf.keras.Model):
         if self.mode == "o":
             return self.norm_output(y_pred, inverse=True).numpy()
 
+    def raw_predict(self, x, *args, **kwargs):
+        return super().predict(x, *args, **kwargs)
+
     def make_feasible(
         self,
         X,
-        learning_rate=0.1,
+        learning_rate=0.001,
         transform=None,
-        max_iterations=100,
+        max_iterations=1000,
+        detect_plateau=True,
         max_steps_filter=None,
-        use_joint_loss=False,
-        verbose=0,
+        targets="objective",
+        zero_infeasible=False,
+        verbose=1,
         return_trace=False,
     ):
         if transform is None:
@@ -750,12 +969,13 @@ class Model(tf.keras.Model):
         )
 
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        loss_fn = tf.keras.losses.BinaryFocalCrossentropy()
 
         trace = [X]
+        loss_history = []
         iteration = 0
         while True:
-            with tf.GradientTape() as tape:
+            losses = []
+            with tf.GradientTape(persistent=True) as tape:
                 tape.watch(input_sample)
 
                 # reparametrize to ensure positivity
@@ -775,33 +995,96 @@ class Model(tf.keras.Model):
                     raise ValueError(f"Invalid transform! {transform}")
 
                 prediction = self(z)
-                logits = prediction
-                if self.mode == "o":
-                    # simply minimize the objectives
-                    loss = tf.reduce_mean(logits)
-                else:
-                    if self.mode == "c+o":
-                        logits = prediction["constraints"]
-                    loss = loss_fn(
-                        tf.constant(
-                            np.ones([input_sample.shape[0], self.num_constraints]),
-                            dtype=tf.float32,
-                        ),
-                        logits,
+
+                logits_o = None
+                logits_c = None
+                if self.mode == "c+o":
+                    logits_o = prediction["objectives"]
+                    logits_c = prediction["constraints"]
+                elif self.mode == "o":
+                    logits_o = prediction
+                elif self.mode == "c":
+                    logits_c = prediction
+
+                if "o" in self.mode and "objective" in targets:
+                    y_ = tf.constant(self.y_)
+                    o = self.norm_output(logits_o, inverse=True)
+
+                    nadir = tf.reduce_max(tf.concat([o, y_], axis=0), axis=0)
+
+                    front = o / (nadir + 1e-8)
+                    reference = tf.ones_like(nadir) * 1.1
+
+                    dominated_space = tf.maximum(reference - front, 0)
+                    volume = tf.reduce_prod(dominated_space, axis=-1)
+                    score = tf.reduce_sum(-1 * volume)
+
+                    prefix = -1 if "-objective" in targets else 1
+                    losses.append(prefix * score)
+
+                if "c" in self.mode and "constraint" in targets:
+                    losses.append(
+                        tf.keras.losses.BinaryFocalCrossentropy()(
+                            tf.constant(
+                                prefix
+                                * np.ones(
+                                    [input_sample.shape[0], self.num_constraints]
+                                ),
+                                dtype=tf.float32,
+                            ),
+                            logits_c,
+                        )
                     )
-                    if self.mode == "c+o" and use_joint_loss:
-                        # add penalty for regression targets
-                        loss = loss + tf.reduce_mean(prediction["objectives"])
+
+                if self.X_raw_ is not None and "distance" in targets:
+                    # normalize input_sample and X_ to [0,1] using bounds
+                    xlb = tf.constant(self.xlb)
+                    xub = tf.constant(self.xub)
+                    r = xub - xlb
+                    # maximize pairwise distance to ensure exploration
+                    losses.append(
+                        distance_maximization_loss(
+                            (input_sample - xlb) / r, (self.X_raw_ - xlb) / r
+                        )
+                    )
+
+            derivatives = [tape.gradient(lt, input_sample) for lt in losses]
+            del tape
+
+            # balance via gradient norms
+            if len(losses) > 1:
+                norms = [tf.norm(g) for g in derivatives]
+                ref_norm = norms[0]
+                factors = [ref_norm / (norm + 1e-8) for norm in norms]
+                loss = tf.reduce_sum([w * l for w, l in zip(factors, losses)])
+                grads = tf.reduce_sum([w * l for w, l in zip(factors, derivatives)])
+            else:
+                loss = losses[0]
+                grads = derivatives[0]
 
             if iteration > max_iterations:
                 break
 
-            grads = tape.gradient(loss, input_sample)
-            if grads is None:
-                raise RuntimeError("Gradient computation failed")
+            loss_history.append(loss.numpy())
 
-            if self.mode != "o":
-                is_feasible = tf.math.reduce_all(logits > 0.99, axis=1)
+            plateau_window = 50
+            if detect_plateau and len(loss_history) > plateau_window:
+                recent_losses = loss_history[-plateau_window:]
+                # iqr
+                q1 = np.percentile(recent_losses, 25)
+                q3 = np.percentile(recent_losses, 75)
+                iqr = q3 - q1
+
+                # break if IQR is very small relative to the median
+                median = np.median(recent_losses)
+                relative_iqr = iqr / abs(median) if median != 0 else iqr
+
+                if relative_iqr < 0.01:
+                    print("Loss is plateauing, stopping early")
+                    break
+
+            if zero_infeasible and self.mode != "o":
+                is_feasible = tf.math.reduce_all(logits_c > 0.99, axis=1)
 
                 # record number of steps for feasible samples
                 steps = tf.where(is_feasible, steps, iteration)
@@ -815,7 +1098,14 @@ class Model(tf.keras.Model):
             optimizer.apply_gradients([(grads, input_sample)])
 
             if verbose > 0:
-                print(f"Iteration {iteration}, loss = {loss.numpy()}")
+                try:
+                    preds = np.mean(prediction, axis=0)
+                    objs = np.mean(self.norm_output(prediction, inverse=True), axis=0)
+                    print(
+                        f"Iteration {iteration}, loss = {loss.numpy()}, logits={preds}, objectives={objs}"
+                    )
+                except:
+                    pass
 
             if isinstance(transform, (list, tuple)):
                 input_sample.assign(apply_bounds(input_sample, transform))
@@ -849,13 +1139,13 @@ class Model(tf.keras.Model):
         steps = steps.numpy()
 
         if return_trace:
-            return trace, steps
+            return trace, loss_history
 
         if max_steps_filter is True:
             max_steps_filter = max_iterations - 2
 
         if not max_steps_filter or self.mode == "o":
-            return zp, steps
+            return zp, loss_history
 
         # only use the samples where the steps where below cutoff
         x_filtered = np.where(
@@ -864,7 +1154,7 @@ class Model(tf.keras.Model):
             X,
         )
 
-        return x_filtered, steps
+        return x_filtered, loss_history
 
     def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
