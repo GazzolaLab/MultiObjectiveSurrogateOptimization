@@ -4,12 +4,7 @@ from machinable import Interface, get
 
 class _Ca1SoptBaseline(Interface):
     def populations(self):
-        return [
-            "SCA",
-            "BS",
-            "NGFC",
-            "OLM"
-        ]
+        return ["SCA", "BS", "NGFC", "OLM"]
 
     def launch(self):
         from models.ops import import_initial_samples
@@ -37,6 +32,10 @@ class _Ca1SoptBaseline(Interface):
                             {
                                 "dopt_params.surrogate_method_name": "megp",
                             },
+                            "~joint_model(mode='o', backbone='resnet')",
+                            "~joint_model(mode='c+o', backbone='resnet')",
+                            "~joint_model(mode='o', backbone='fttransformer')",
+                            "~joint_model(mode='c+o', backbone='fttransformer')",
                         ]:
                             with get("machinable.scope", {"parent": initial.hash}):
                                 e = get(
