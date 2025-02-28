@@ -149,24 +149,35 @@ def joint(
             # we do not use the ranking
             self._wrapped.x_distance_metrics = None
 
+            self._count = 0
+
         @property
         def population_objectives(self):
             return self.get_population_strategy()
 
         def get_population_strategy(self):
-            if feasibility_solving:
-                x_prime = np.zeros_like(self.parameters)
+            parameters = self._wrapped.state.population_parm.copy()
+            objectives = self._wrapped.state.population_obj.copy()
+            self._count += 1
+            if feasibility_solving and self._count > 10:
+                x_prime = np.zeros_like(parameters)
                 split = len(x_prime) // 2
                 # elite
-                x_prime[:split, :] = self.parameters[:split, :]
+                x_prime[:split, :] = parameters[:split, :]
                 # exploration
-                x_prime[split:, :] = self.sampling_modifier(self.parameters[split:, :])
+                x_prime[split:, :] = model.make_feasible(
+                    parameters[split:, :],
+                    targets=feasibility_targets,
+                    verbose=1,
+                )[0]
 
-                return x_prime, self.objectives.copy()
+                return x_prime, np.zeros_like(objectives)
 
-            return self.parameters.copy(), self.objectives.copy()
+            return parameters, objectives
 
         def generate_initial(self, *args, **kwargs):
+            self._count = 0
+
             x = self._wrapped.generate_initial(*args, **kwargs)
 
             # x = self.sampling_modifier(x)
@@ -237,9 +248,9 @@ def dynamic_sampling(
     backbone="resnet",
     optimizer_sampling=None,
     feasibility_solving=False,
-    feasibility_max_iterations=50,
+    feasibility_max_iterations=1000,
     feasibility_targets="objective distance",
-    feasibility_max_steps_filter=True,
+    feasibility_max_steps_filter=None,
     verbose=1,
     # ---
     _history=[],
@@ -264,11 +275,11 @@ def dynamic_sampling(
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
-    - feasibility_max_iterations=50
+    - feasibility_max_iterations=1000
         Only applies if feasibility_solving is True; number of iterations
     - feasibility_targets='objective distance'
         Only applies if feasibility_solving is True
-    - feasibility_max_steps_filter=True
+    - feasibility_max_steps_filter=None
         Only applies if feasibility_solving is True; optional early stopping
     """
     if verbose > 0:
@@ -457,7 +468,7 @@ def dynamic_sampling(
         learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
-        feasibility_targets=feasibility_targets,
+        targets=feasibility_targets,
     )
 
     if verbose > 0:
