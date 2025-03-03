@@ -68,7 +68,7 @@ def joint(
 
     def _reduction(s):
         a = tf.abs(s)
-        n = a / tf.reduce_max(a, axis=0)
+        n = a / (tf.reduce_max(a, axis=0) + 1e-7)
         return tf.reduce_mean(n, axis=0)
 
     class _Model:
@@ -83,20 +83,22 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            sens = self.sensitivity(x, _reduction)
+            sens = self.sensitivity(x)
             if isinstance(sens, dict):
                 # disregard constraint gradients
                 sens = sens["objectives"]
 
             # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
-            di_crossover = 5 + (sens * 25)
-            di_mutation = 5 + (sens * 45)
+            computed_di_crossover = 1 + (np.abs(sens) * 30)
+            computed_di_mutation = 5 + (np.abs(sens) * 50)
+            di_crossover = np.maximum(1, np.mininum(30, computed_di_crossover))
+            di_mutation = np.maximum(5, np.mininum(50, computed_di_mutation))
 
             if sensitivity == "cross_check":
                 # invert values to cross-check effect of sensitivity
-                di_crossover = 30 - (sens * 25)
-                di_mutation = 50 - (sens * 45)
+                di_crossover = 25.5 - (sens * 25)
+                di_mutation = 45.5 - (sens * 45)
 
             return {
                 "di_mutation": di_mutation,

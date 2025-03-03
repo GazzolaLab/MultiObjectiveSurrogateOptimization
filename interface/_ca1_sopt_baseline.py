@@ -3,8 +3,21 @@ from machinable import Interface, get
 
 
 class _Ca1SoptBaseline(Interface):
+    class Config:
+        selection: tuple = (-4, None)
+    
     def populations(self):
-        return ["SCA", "BS", "NGFC", "OLM"]
+        return [
+            "IVY",
+            "PVBC",
+            "CCKBC",
+            "AAC",
+            "IS",
+            "SCA",
+            "BS",
+            "OLM",
+            "NGFC",
+        ][slice(*self.config.selection)]
 
     def launch(self):
         from models.ops import import_initial_samples
