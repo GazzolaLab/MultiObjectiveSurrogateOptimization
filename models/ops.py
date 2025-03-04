@@ -83,22 +83,21 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            sens = self.sensitivity(x)
-            if isinstance(sens, dict):
-                # disregard constraint gradients
-                sens = sens["objectives"]
+            sens = self.sensitivity(x)["objectives"]
+
+            sens = np.log1p(sens) / 10
 
             # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
-            computed_di_crossover = 1 + (np.abs(sens) * 30)
-            computed_di_mutation = 5 + (np.abs(sens) * 50)
-            di_crossover = np.maximum(1, np.mininum(30, computed_di_crossover))
-            di_mutation = np.maximum(5, np.mininum(50, computed_di_mutation))
+            computed_di_crossover = 1 + (np.abs(sens) * 20)
+            computed_di_mutation = 1 + (np.abs(sens) * 20)
+            di_crossover = np.maximum(1, np.minimum(30, computed_di_crossover))
+            di_mutation = np.maximum(1, np.minimum(30, computed_di_mutation))
 
             if sensitivity == "cross_check":
                 # invert values to cross-check effect of sensitivity
-                di_crossover = 25.5 - (sens * 25)
-                di_mutation = 45.5 - (sens * 45)
+                di_crossover = 31 - di_crossover
+                di_mutation = 31 - di_mutation
 
             return {
                 "di_mutation": di_mutation,

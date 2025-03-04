@@ -1156,18 +1156,37 @@ class Model(tf.keras.Model):
 
         return x_filtered, loss_history
 
-    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
+    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0), renorm=True):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(X)
             y_pred = self(X)
 
-        if self.mode == "c+o":
-            return {
-                k: reduction(tape.gradient(y_pred[k], X)).numpy() for k in y_pred.keys()
+        if self.mode == "o":
+            y_pred = {
+                "objectives": y_pred,
+                "constraints": None,
             }
-        else:
-            return reduction(tape.gradient(y_pred, X)).numpy()
+        elif self.mode == "c":
+            y_pred = {
+                "objectives": None,
+                "constraints": y_pred,
+            }
+
+        sens = {}
+        for k in y_pred.keys():
+            if y_pred[k] is None:
+                sens[k] = None
+                continue
+            g = tape.gradient(y_pred[k], X)
+
+            # adjust by chain-rule
+            if renorm:
+                n = g / self.input_norm_layer.xrg
+
+            sens[k] = reduction(g).numpy()
+
+        return sens
 
 
 class Columnwise:
