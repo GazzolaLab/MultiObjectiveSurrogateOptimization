@@ -1156,7 +1156,7 @@ class Model(tf.keras.Model):
 
         return x_filtered, loss_history
 
-    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0), renorm=True):
+    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=True):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(X)
@@ -1182,7 +1182,7 @@ class Model(tf.keras.Model):
 
             # adjust by chain-rule
             if renorm:
-                n = g / self.input_norm_layer.xrg
+                g = g / self.input_norm_layer.xrg
 
             sens[k] = reduction(g).numpy()
 
