@@ -944,6 +944,7 @@ class Model(tf.keras.Model):
         zero_infeasible=False,
         verbose=1,
         return_trace=False,
+        renorm=True,
     ):
         if transform is None:
             if self.xlb is not None and self.xub is not None:
@@ -1051,6 +1052,10 @@ class Model(tf.keras.Model):
             derivatives = [tape.gradient(lt, input_sample) for lt in losses]
             del tape
 
+            if renorm and isinstance(transform, (list, tuple)):
+                rg = tf.constant([u - l for l, u in transform])
+                derivatives = [dl / rg for dl in derivatives]
+
             # balance via gradient norms
             if len(losses) > 1:
                 norms = [tf.norm(g) for g in derivatives]
@@ -1080,7 +1085,10 @@ class Model(tf.keras.Model):
                 relative_iqr = iqr / abs(median) if median != 0 else iqr
 
                 if relative_iqr < 0.01:
-                    print("Loss is plateauing, stopping early")
+                    if verbose > 0:
+                        print(
+                            f"Loss is plateauing, stopping early after {len(loss_history)} steps."
+                        )
                     break
 
             if zero_infeasible and self.mode != "o":
@@ -1156,7 +1164,9 @@ class Model(tf.keras.Model):
 
         return x_filtered, loss_history
 
-    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=True):
+    def sensitivity(
+        self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=True
+    ):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(X)
