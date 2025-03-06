@@ -464,6 +464,8 @@ class Dmosopt(Component):
         mask = slice(None)
         if isinstance(region, (list, tuple)):
             mask = slice(*region)
+        elif isinstance(region, slice):
+            mask = region
 
         data = self.load_h5(filepath, opt_id, problem_id)
 
@@ -504,7 +506,7 @@ class Dmosopt(Component):
         with h5py.File(filepath, "r") as h5:
             stats = None
             if f"/{opt_id}/optimizer_stats" in h5:
-                epoch = 0
+                epoch = 0 if f"/{opt_id}/optimizer_stats/0" in h5 else 1
                 stats = []
                 while True:
                     if f"/{opt_id}/optimizer_stats/{epoch}" not in h5:
