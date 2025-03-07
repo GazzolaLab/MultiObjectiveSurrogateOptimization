@@ -6,6 +6,7 @@ from machinable.utils import save_file, load_file
 import pandas as pd
 import numpy as np
 import scienceplots
+from scipy import stats, metrics
 
 
 plt.style.use(["science", "nature"])
@@ -26,6 +27,20 @@ colors = {
 
 icolors = [c for c in colors.values()]
 
+mcolors = {
+    k: icolors[i]
+    for i, k in enumerate(
+        [
+            "gpr",
+            "megp",
+            "o-resnet",
+            "c+o-resnet",
+            "o-fttransformer",
+            "c+o-fttransformer",
+        ]
+    )
+}
+
 
 def Figure():
     import pylustrator
@@ -41,6 +56,26 @@ def fronts_nadir(components, **kwargs):
     return (
         pd.concat(components.map(lambda e: e.get_best(**kwargs)["y"])).max().to_list()
     )
+
+
+def compute_auc_hvs(hypervolumes):
+    aucs = {}
+    for p, models in hypervolumes.items():
+        aucs.setdefault(p, {})
+        for model_name, epoch_hvs in models.items():
+            x = []
+            ys = {}
+            for epoch, hvs in epoch_hvs.items():
+                x.append(int(epoch))
+                for i in range(len(hvs)):
+                    ys.setdefault(i, [])
+                    ys[i].append(hvs[i])
+
+            aucs[p][model_name] = [
+                metrics.auc(x, y) for y in ys.values() if len(y) == len(x)
+            ]
+
+    return aucs
 
 
 def population_nadirs(*interface):
