@@ -858,9 +858,7 @@ class Dmosopt(Component):
         if self.config.dopt_params.get("dynamic_initial_sampling", None) is not None:
             n_initial = getattr(self, "inferred_num_initial_samples", None)
             if n_initial is None:
-                raise RuntimeError(
-                    "Dynamic initial sampling is used, so the number of initial samples is not known. Call infer_num_initial_samples() first."
-                )
+                return self.infer_num_initial_samples()
             else:
                 return n_initial
 

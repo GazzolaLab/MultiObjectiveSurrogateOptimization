@@ -944,7 +944,7 @@ class Model(tf.keras.Model):
         zero_infeasible=False,
         verbose=1,
         return_trace=False,
-        renorm=True,
+        renorm=False,
     ):
         if transform is None:
             if self.xlb is not None and self.xub is not None:
@@ -1165,7 +1165,7 @@ class Model(tf.keras.Model):
         return x_filtered, loss_history
 
     def sensitivity(
-        self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=True
+        self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=False
     ):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
         with tf.GradientTape(persistent=True) as tape:
