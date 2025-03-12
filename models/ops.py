@@ -85,8 +85,6 @@ def joint(
         def di_dict(self):
             sens = self.sensitivity(x)["objectives"]
 
-            sens = np.log1p(sens) / 10
-
             # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
             computed_di_crossover = 1 + (np.abs(sens) * 20)

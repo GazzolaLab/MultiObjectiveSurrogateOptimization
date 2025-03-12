@@ -1165,36 +1165,48 @@ class Model(tf.keras.Model):
         return x_filtered, loss_history
 
     def sensitivity(
-        self, X, reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0), renorm=False
+        self,
+        X,
+        reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0),
+        batch_size=1024,
     ):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
-        with tf.GradientTape(persistent=True) as tape:
-            tape.watch(X)
-            y_pred = self(X)
-
-        if self.mode == "o":
-            y_pred = {
-                "objectives": y_pred,
-                "constraints": None,
-            }
-        elif self.mode == "c":
-            y_pred = {
-                "objectives": None,
-                "constraints": y_pred,
-            }
+        num_samples = X.shape[0]
+        num_batches = (num_samples + batch_size - 1) // batch_size
 
         sens = {}
-        for k in y_pred.keys():
-            if y_pred[k] is None:
-                sens[k] = None
-                continue
-            g = tape.gradient(y_pred[k], X)
+        for start_idx in range(0, num_samples, batch_size):
+            end_idx = min(start_idx + batch_size, num_samples)
+            X_batch = X[start_idx:end_idx]
 
-            # adjust by chain-rule
-            if renorm:
-                g = g / self.input_norm_layer.xrg
+            with tf.GradientTape(persistent=True) as tape:
+                tape.watch(X_batch)
+                y_pred = self(X_batch)
 
-            sens[k] = reduction(g).numpy()
+            if self.mode == "o":
+                y_pred = {
+                    "objectives": y_pred,
+                    "constraints": None,
+                }
+            elif self.mode == "c":
+                y_pred = {
+                    "objectives": None,
+                    "constraints": y_pred,
+                }
+
+            for k in y_pred.keys():
+                if y_pred[k] is None:
+                    sens[k] = None
+                    continue
+
+                g = tape.gradient(y_pred[k], X_batch)
+
+                g = g * X_batch
+
+                batch_sens = reduction(g).numpy()
+                if k not in sens:
+                    sens[k] = np.zeros_like(batch_sens)
+                sens[k] += batch_sens * (end_idx - start_idx) / num_samples
 
         return sens
 
