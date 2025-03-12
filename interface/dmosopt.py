@@ -18,6 +18,9 @@ from dmosopt import indicators
 import numpy as np
 import pandas as pd
 import datetime
+import distwq
+
+
 
 sys_excepthook = sys.excepthook
 
@@ -287,7 +290,7 @@ class Dmosopt(Component):
             worker_debug=self.config.worker_debug,
         )
 
-        if MPI.COMM_WORLD.Get_rank() > 0:
+        if MPI.COMM_WORLD.Get_rank() != getattr(distwq, "controller_rank", 0):
             return
 
         try:
@@ -344,10 +347,10 @@ class Dmosopt(Component):
         return os.path.abspath(self.local_directory("dmosopt.h5"))
 
     def on_write_meta_data(self):
-        return MPI.COMM_WORLD.Get_rank() == 0
+        return MPI.COMM_WORLD.Get_rank() == getattr(distwq, "controller_rank", 0)
 
     def on_commit(self):
-        if MPI.COMM_WORLD.Get_rank() > 0:
+        if MPI.COMM_WORLD.Get_rank() != getattr(distwq, "controller_rank", 0):
             return False
 
     @cachable(file=False)
