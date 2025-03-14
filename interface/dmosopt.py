@@ -21,7 +21,6 @@ import datetime
 import distwq
 
 
-
 sys_excepthook = sys.excepthook
 
 
@@ -516,13 +515,15 @@ class Dmosopt(Component):
                         break
 
                     epoch_stats = h5[f"/{opt_id}/optimizer_stats/{epoch}/stats"]
-                    stats.append(epoch_stats[:])
+                    stats.append(
+                        {
+                            n: v
+                            for n, v in zip(epoch_stats[0].dtype.names, epoch_stats[0])
+                        }
+                    )
 
                     epoch += 1
-
-                stats = pd.DataFrame(
-                    np.concatenate(stats), columns=epoch_stats.dtype.names
-                )
+                stats = pd.DataFrame(stats)
 
             params = None
             if f"/{opt_id}/optimizer_params" in h5:
