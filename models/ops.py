@@ -83,7 +83,17 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            sens = self.sensitivity(x)["objectives"]
+            from SALib.sample import finite_diff
+
+            points = finite_diff.sample(
+                {"num_vars": len(xlb), "bounds": list(zip(xlb, xub))}, 10000
+            )
+
+            sens = self.sensitivity(
+                points, reduction=lambda x: tf.reduce_mean(tf.math.square(x), axis=0)
+            )["objectives"]
+
+            sens = sens / (tf.reduce_max(sens) + 1e-7)
 
             # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
@@ -94,8 +104,8 @@ def joint(
 
             if sensitivity == "cross_check":
                 # invert values to cross-check effect of sensitivity
-                di_crossover = 31 - di_crossover
-                di_mutation = 31 - di_mutation
+                di_crossover = 21 - di_crossover
+                di_mutation = 21 - di_mutation
 
             return {
                 "di_mutation": di_mutation,

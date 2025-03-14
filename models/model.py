@@ -233,16 +233,16 @@ class Model(tf.keras.Model):
             trainable=False,
         )
 
-        self.min_mean_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
+        self.min_mean_yR = self.add_weight(
             name="min_mean_yR",
+            shape=[num_objectives],
+            initializer="zeros",
             trainable=False,
         )
-        self.max_std_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
-            name="max_std_yR",
+        self.max_std_yR = self.add_weight(
+            name="max_std_yR", 
+            shape=[num_objectives],
+            initializer="zeros",
             trainable=False,
         )
 
