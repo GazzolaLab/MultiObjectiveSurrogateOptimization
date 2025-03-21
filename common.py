@@ -6,8 +6,8 @@ from machinable.utils import save_file, load_file
 import pandas as pd
 import numpy as np
 import scienceplots
-from scipy import stats, metrics
-
+from scipy import stats
+from sklearn import metrics
 
 plt.style.use(["science", "nature"])
 plt.rcParams.update({"figure.dpi": "300"})
@@ -101,7 +101,7 @@ def status(interface):
 def globus_download(interface, force=False):
     if not os.path.isfile(interface.components[0].output_filepath) or force:
         with get("interface.storage.globus"):
-            with get("interface.execution.download"):
+            with get("interface.execution.download", {"force": force}):
                 interface.launch()
 
 

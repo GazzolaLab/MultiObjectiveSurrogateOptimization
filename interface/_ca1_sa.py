@@ -4,13 +4,18 @@ from machinable import Interface, get
 
 class _Ca1Sa(Interface):
     def populations(self):
-        return ["SCA", "BS", "NGFC", "OLM"]
+        return [
+            "SCA",
+            "BS",
+            "NGFC",
+            "OLM",
+        ]
 
     def launch(self):
         from models.ops import import_initial_samples
 
         for nm in self.populations():
-            for trial in range(3):
+            for trial in range(5):
                 with get("machinable.scope", {"trial": trial}):
                     initial = get(
                         "interface.sopt_modeling",
@@ -26,21 +31,20 @@ class _Ca1Sa(Interface):
                     if initial.cached():
                         for version in [
                             [
-                                "~joint_model(mode='o', backbone='fttransformer')",
+                                "~joint_model(mode='c+o', backbone='fttransformer')",
                                 {"dopt_params.sensitivity_method_name": "dgsm"},
                             ],
                             [
-                                "~joint_model(mode='o', backbone='fttransformer')",
+                                "~joint_model(mode='c+o', backbone='fttransformer')",
                                 {"dopt_params.sensitivity_method_name": "fast"},
                             ],
-                            "~joint_model(mode='o', backbone='fttransformer', sensitivity=True)",
                             "~joint_model(mode='c+o', backbone='fttransformer', sensitivity=True)",
-                            "~joint_model(mode='o', backbone='fttransformer', sensitivity='cross_check')",
                             "~joint_model(mode='c+o', backbone='fttransformer', sensitivity='cross_check')",
                         ]:
-                            if isinstance(version, str):
-                                version = [version]
-                            with get("machinable.scope", {"parent": initial.hash}):
+                            with get(
+                                "machinable.scope",
+                                {"parent": initial.hash, "renorm": "max"},
+                            ):
                                 e = get(
                                     [
                                         "interface.sopt_modeling",
