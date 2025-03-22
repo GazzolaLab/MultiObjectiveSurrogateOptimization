@@ -1063,9 +1063,14 @@ class Model(tf.keras.Model):
                 factors = [ref_norm / (norm + 1e-8) for norm in norms]
                 loss = tf.reduce_sum([w * l for w, l in zip(factors, losses)])
                 grads = tf.reduce_sum([w * l for w, l in zip(factors, derivatives)])
-            else:
+            elif len(losses) == 1:
                 loss = losses[0]
                 grads = derivatives[0]
+            else:
+                # no losses, exit
+                loss = float('nan')
+                grads = []
+                break
 
             if iteration > max_iterations:
                 break
