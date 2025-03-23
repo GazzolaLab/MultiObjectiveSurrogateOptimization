@@ -1068,7 +1068,7 @@ class Model(tf.keras.Model):
                 grads = derivatives[0]
             else:
                 # no losses, exit
-                loss = float('nan')
+                loss = None
                 grads = []
                 break
 
@@ -1131,7 +1131,7 @@ class Model(tf.keras.Model):
         for layer in self.layers:
             layer.trainable = True
 
-        if np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
+        if loss is None or np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
             # invalid optimization
             return X, False
 
