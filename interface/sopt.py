@@ -3,6 +3,17 @@ from interface.dmosopt import Dmosopt
 
 class Sopt(Dmosopt):
     @property
+    def dynamic_sampling(self) -> bool:
+        return self.config.dopt_params.get("dynamic_initial_sampling", None) is not None
+
+    @property
+    def dynamic_sampling_kwargs(self) -> dict:
+        if not self.dynamic_sampling:
+            return {}
+
+        return self.config.dopt_params.get("dynamic_initial_sampling_kwargs", {})
+
+    @property
     def custom_training(self) -> bool:
         return (
             self.config.dopt_params.get("surrogate_custom_training", None) is not None
