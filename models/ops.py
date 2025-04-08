@@ -292,12 +292,18 @@ def dynamic_sampling(
         Only applies if feasibility_solving is True; optional early stopping
     """
     if verbose > 0:
-        print(f"Dynamic sampling: starting iteration {iteration} ({file_path})")
+        print(
+            f"Dynamic sampling: starting iteration {iteration} ({file_path})",
+            flush=True,
+        )
 
     if len(evaluated_samples) >= max_samples:
         # time-out
         if verbose > 0:
-            print(f"Dynamic sampling reached maximum {max_samples}, terminating ...")
+            print(
+                f"Dynamic sampling reached maximum {max_samples}, terminating ...",
+                flush=True,
+            )
         return
 
     if len(evaluated_samples) == 0:
@@ -317,25 +323,26 @@ def dynamic_sampling(
     constraint_equal_ratio = constraint_unique_samples / c_completed.shape[0]
 
     # check if all constraints are equal
-    #  this may happen at the beginning and will make
-    if constraint_unique_samples < 50 or constraint_equal_ratio > 0.2:
+    #  this may happen at the beginning
+    if constraint_unique_samples < 3:
         if verbose > 0:
             print(
-                f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})"
+                f"Most or all constraint samples are equal ({constraint_equal_ratio*100}% unique)",
+                flush=True,
             )
 
         if "!" in mode:
             if mode.replace("!", "") == "c":
                 # constraint-only training is meaningless, keep sampling
                 if verbose > 0:
-                    print("Continue with sampling ...")
+                    print("Continue with sampling ...", flush=True)
                 return next_samples
 
             # leave forced mode
         else:
             # fall back on objectives alone
             if verbose > 0:
-                print(f"Using o-mode (overriding {mode}-mode)")
+                print(f"Using o-mode (overriding {mode}-mode)", flush=True)
             mode = "o"
 
     if backbone == "resnet":
@@ -361,7 +368,8 @@ def dynamic_sampling(
     if min(autoepochs) < 5:
         if verbose > 0:
             print(
-                "Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ..."
+                "Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ...",
+                flush=True,
             )
         return next_samples
 
@@ -375,7 +383,7 @@ def dynamic_sampling(
 
     # gather stats
     scores = model.autoeval(x_completed, y_completed, c_completed)
-
+    raise ValueError(scores)
     scores.setdefault("accuracy", -1)
     scores.setdefault("precision", -1)
     scores.setdefault("recall", -1)
