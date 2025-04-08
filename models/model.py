@@ -819,12 +819,17 @@ class Model(tf.keras.Model):
                 (y_pred["constraints"] > 0.5).astype(int).all(axis=1).astype(int)
             )
 
+            y_pred_C = (y_pred["constraints"] > 0.5).astype(int)
+            y_test_C = y_test["constraints"].astype(int)
+
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": float(accuracy_score(y_test, y_pred)),
-                "precision": float(precision_score(y_test, y_pred, average="micro")),
-                "recall": float(recall_score(y_test, y_pred, average="micro")),
-                "f1": float(f1_score(y_test, y_pred, average="micro")),
+                "accuracy": float(accuracy_score(y_test_C, y_pred_C)),
+                "precision": float(
+                    precision_score(y_test_C, y_pred_C, average="micro")
+                ),
+                "recall": float(recall_score(y_test_C, y_pred_C, average="micro")),
+                "f1": float(f1_score(y_test_C, y_pred_C, average="micro")),
                 "global_accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
                 "global_precision": float(precision_score(y_test_prime, y_pred_prime)),
                 "global_recall": float(recall_score(y_test_prime, y_pred_prime)),
