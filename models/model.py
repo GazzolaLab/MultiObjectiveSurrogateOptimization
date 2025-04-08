@@ -732,7 +732,7 @@ class Model(tf.keras.Model):
             method = self.normalize_targets
 
         if method is False:
-            return tf.constant(yR)
+            return tf.constant(yR, dtype=tf.float32)
 
         if adapt:
             if "max" in method or method == "range":
