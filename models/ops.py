@@ -383,7 +383,7 @@ def dynamic_sampling(
 
     # gather stats
     scores = model.autoeval(x_completed, y_completed, c_completed)
-    raise ValueError(scores)
+
     scores.setdefault("accuracy", -1)
     scores.setdefault("precision", -1)
     scores.setdefault("recall", -1)

@@ -240,7 +240,7 @@ class Model(tf.keras.Model):
             trainable=False,
         )
         self.max_std_yR = self.add_weight(
-            name="max_std_yR", 
+            name="max_std_yR",
             shape=[num_objectives],
             initializer="zeros",
             trainable=False,
@@ -445,7 +445,7 @@ class Model(tf.keras.Model):
             }
         elif self.mode == "c":
             loss = "binary_crossentropy"
-            metrics = acc
+            metrics = ["acc", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
         elif self.mode == "o":
             loss = objective_loss
             metrics = ["mae"]
@@ -580,12 +580,16 @@ class Model(tf.keras.Model):
                             "constraints": yC_val,
                         },
                     )
+                    monitor_metrics = ["val_objectives_loss"]
                 elif self.mode == "c":
                     y_ = yC_train
                     val_ = (X_val, yC_val)
+                    monitor_metrics = ["val_loss"]
                 elif self.mode == "o":
                     y_ = y_train
                     val_ = (X_val, y_val)
+                    monitor_metrics = ["val_mae"]
+
                 history = self.fit(
                     X_train,
                     y_,
@@ -599,13 +603,7 @@ class Model(tf.keras.Model):
                             restore_best_weights=False,
                             mode="min",
                         )
-                        for mon in (
-                            [
-                                "val_objectives_loss",  # "val_constraints_loss"
-                            ]
-                            if self.mode == "c+o"
-                            else ["val_mae"]  # "val_loss"
-                        )
+                        for mon in monitor_metrics
                     ]
                     + [
                         tf.keras.callbacks.TerminateOnNaN(),
@@ -823,10 +821,14 @@ class Model(tf.keras.Model):
 
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
-                "precision": float(precision_score(y_test_prime, y_pred_prime)),
-                "recall": float(recall_score(y_test_prime, y_pred_prime)),
-                "f1": float(f1_score(y_test_prime, y_pred_prime)),
+                "accuracy": float(accuracy_score(y_test, y_pred)),
+                "precision": float(precision_score(y_test, y_pred, average="micro")),
+                "recall": float(recall_score(y_test, y_pred, average="micro")),
+                "f1": float(f1_score(y_test, y_pred, average="micro")),
+                "global_accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "global_precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "global_recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "global_f1": float(f1_score(y_test_prime, y_pred_prime)),
                 "mdae": float(
                     normed(median_absolute_error)(
                         y_test["objectives"],
@@ -843,6 +845,7 @@ class Model(tf.keras.Model):
 
         if self.mode == "c":
             y_prob = self.predict(X_test, verbose=verbose)
+
             y_pred = (y_prob > 0.5).astype(int)
 
             y_test_prime = y_test.all(axis=1).astype(int)
@@ -866,12 +869,26 @@ class Model(tf.keras.Model):
                 )
                 return tbl
 
+            if verbose > 2:
+                print("\nMisclassified samples:")
+                diff_mask = y_pred != y_test
+                for i in range(len(y_test)):
+                    if diff_mask[i].any():
+                        print(f"Row {i}:")
+                        print(f"Predicted: {y_pred[i]}")
+                        print(f"Actual:    {y_test[i]}")
+                        print()
+
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
-                "precision": float(precision_score(y_test_prime, y_pred_prime)),
-                "recall": float(recall_score(y_test_prime, y_pred_prime)),
-                "f1": float(f1_score(y_test_prime, y_pred_prime)),
+                "accuracy": float(accuracy_score(y_test, y_pred)),
+                "precision": float(precision_score(y_test, y_pred, average="macro")),
+                "recall": float(recall_score(y_test, y_pred, average="macro")),
+                "f1": float(f1_score(y_test, y_pred, average="macro")),
+                "global_accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "global_precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "global_recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "global_f1": float(f1_score(y_test_prime, y_pred_prime)),
             }
 
         if self.mode == "o":
