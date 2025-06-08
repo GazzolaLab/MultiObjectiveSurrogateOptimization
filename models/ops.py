@@ -68,7 +68,7 @@ def joint(
 
     def _reduction(s):
         a = tf.abs(s)
-        n = a / tf.reduce_max(a, axis=0)
+        n = a / (tf.reduce_max(a, axis=0) + 1e-7)
         return tf.reduce_mean(n, axis=0)
 
     class _Model:
@@ -83,20 +83,29 @@ def joint(
             return self.predict_objectives(x)
 
         def di_dict(self):
-            sens = self.sensitivity(x, _reduction)
-            if isinstance(sens, dict):
-                # disregard constraint gradients
-                sens = sens["objectives"]
+            from SALib.sample import finite_diff
+
+            points = finite_diff.sample(
+                {"num_vars": len(xlb), "bounds": list(zip(xlb, xub))}, 10000
+            )
+
+            sens = self.sensitivity(
+                points, reduction=lambda x: tf.reduce_mean(tf.math.square(x), axis=0)
+            )["objectives"]
+
+            sens = sens / (tf.reduce_max(sens) + 1e-7)
 
             # higher sensitivity (larger gradient) results in larger di values, leading to smaller perturbations
             # lower sensitivity (smaller gradient) results in smaller di values, leading to larger perturbations
-            di_crossover = 5 + (sens * 25)
-            di_mutation = 5 + (sens * 45)
+            computed_di_crossover = 1 + (np.abs(sens) * 20)
+            computed_di_mutation = 1 + (np.abs(sens) * 20)
+            di_crossover = np.maximum(1, np.minimum(30, computed_di_crossover))
+            di_mutation = np.maximum(1, np.minimum(30, computed_di_mutation))
 
             if sensitivity == "cross_check":
                 # invert values to cross-check effect of sensitivity
-                di_crossover = 30 - (sens * 25)
-                di_mutation = 50 - (sens * 45)
+                di_crossover = 21 - di_crossover
+                di_mutation = 21 - di_mutation
 
             return {
                 "di_mutation": di_mutation,
@@ -149,24 +158,35 @@ def joint(
             # we do not use the ranking
             self._wrapped.x_distance_metrics = None
 
+            self._count = 0
+
         @property
         def population_objectives(self):
             return self.get_population_strategy()
 
         def get_population_strategy(self):
-            if feasibility_solving:
-                x_prime = np.zeros_like(self.parameters)
+            parameters = self._wrapped.state.population_parm.copy()
+            objectives = self._wrapped.state.population_obj.copy()
+            self._count += 1
+            if feasibility_solving and self._count > 10:
+                x_prime = np.zeros_like(parameters)
                 split = len(x_prime) // 2
                 # elite
-                x_prime[:split, :] = self.parameters[:split, :]
+                x_prime[:split, :] = parameters[:split, :]
                 # exploration
-                x_prime[split:, :] = self.sampling_modifier(self.parameters[split:, :])
+                x_prime[split:, :] = model.make_feasible(
+                    parameters[split:, :],
+                    targets=feasibility_targets,
+                    verbose=1,
+                )[0]
 
-                return x_prime, self.objectives.copy()
+                return x_prime, np.zeros_like(objectives)
 
-            return self.parameters.copy(), self.objectives.copy()
+            return parameters, objectives
 
         def generate_initial(self, *args, **kwargs):
+            self._count = 0
+
             x = self._wrapped.generate_initial(*args, **kwargs)
 
             # x = self.sampling_modifier(x)
@@ -237,9 +257,9 @@ def dynamic_sampling(
     backbone="resnet",
     optimizer_sampling=None,
     feasibility_solving=False,
-    feasibility_max_iterations=50,
+    feasibility_max_iterations=1000,
     feasibility_targets="objective distance",
-    feasibility_max_steps_filter=True,
+    feasibility_max_steps_filter=None,
     verbose=1,
     # ---
     _history=[],
@@ -264,20 +284,26 @@ def dynamic_sampling(
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
         e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
-    - feasibility_max_iterations=50
+    - feasibility_max_iterations=1000
         Only applies if feasibility_solving is True; number of iterations
     - feasibility_targets='objective distance'
         Only applies if feasibility_solving is True
-    - feasibility_max_steps_filter=True
+    - feasibility_max_steps_filter=None
         Only applies if feasibility_solving is True; optional early stopping
     """
     if verbose > 0:
-        print(f"Dynamic sampling: starting iteration {iteration} ({file_path})")
+        print(
+            f"Dynamic sampling: starting iteration {iteration} ({file_path})",
+            flush=True,
+        )
 
     if len(evaluated_samples) >= max_samples:
         # time-out
         if verbose > 0:
-            print(f"Dynamic sampling reached maximum {max_samples}, terminating ...")
+            print(
+                f"Dynamic sampling reached maximum {max_samples}, terminating ...",
+                flush=True,
+            )
         return
 
     if len(evaluated_samples) == 0:
@@ -297,25 +323,26 @@ def dynamic_sampling(
     constraint_equal_ratio = constraint_unique_samples / c_completed.shape[0]
 
     # check if all constraints are equal
-    #  this may happen at the beginning and will make
-    if constraint_unique_samples < 50 or constraint_equal_ratio > 0.2:
+    #  this may happen at the beginning
+    if constraint_unique_samples < 3:
         if verbose > 0:
             print(
-                f"Most or all constraint samples are equal ({constraint_unique_samples}/{c_completed.shape[0]})"
+                f"Most or all constraint samples are equal ({constraint_equal_ratio*100}% unique)",
+                flush=True,
             )
 
         if "!" in mode:
             if mode.replace("!", "") == "c":
                 # constraint-only training is meaningless, keep sampling
                 if verbose > 0:
-                    print("Continue with sampling ...")
+                    print("Continue with sampling ...", flush=True)
                 return next_samples
 
             # leave forced mode
         else:
             # fall back on objectives alone
             if verbose > 0:
-                print(f"Using o-mode (overriding {mode}-mode)")
+                print(f"Using o-mode (overriding {mode}-mode)", flush=True)
             mode = "o"
 
     if backbone == "resnet":
@@ -341,7 +368,8 @@ def dynamic_sampling(
     if min(autoepochs) < 5:
         if verbose > 0:
             print(
-                "Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ..."
+                "Invalid autoepoch, likely because of NaNs or convergence issues, sampling more ...",
+                flush=True,
             )
         return next_samples
 
@@ -457,7 +485,7 @@ def dynamic_sampling(
         learning_rate=0.001,
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
-        feasibility_targets=feasibility_targets,
+        targets=feasibility_targets,
     )
 
     if verbose > 0:

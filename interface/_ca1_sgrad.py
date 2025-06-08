@@ -4,17 +4,13 @@ from machinable import Interface, get
 
 class _Ca1Sgrad(Interface):
     def populations(self):
-        return [
-            # "SCA",
-            "BS",
-            # "NGFC",
-        ]
+        return ["SCA", "BS", "NGFC", "OLM"]
 
     def launch(self):
         from models.ops import import_initial_samples
 
         for nm in self.populations():
-            for trial in range(0, 1):
+            for trial in range(3):
                 with get("machinable.scope", {"trial": trial}):
                     initial = get(
                         "interface.sopt_modeling",
@@ -28,31 +24,28 @@ class _Ca1Sgrad(Interface):
                     )
                     assert initial.cached()
                     initial.save_attribute("preflight", True)
-                    for repeat in range(5):
+                    for repeat in range(1):
                         with get(
                             "machinable.scope",
                             {"parent": initial.hash, "repeat": repeat},
                         ):
-                            for backbone in [
-                                "fttransformer",
-                                # "resnet"
-                            ]:
+                            for backbone in ["fttransformer", "resnet"]:
                                 vv = []
                                 for mode in ["o", "c+o"]:
                                     for target in [
-                                        "objective distance",
+                                        # "objective distance",
                                         "objective",
-                                        "distance",
-                                        "-objective distance",
-                                        "-objective",
+                                        # "distance",
+                                        # "-objective distance",
+                                        # "-objective",
                                     ]:
-                                        # vv.append(
-                                        #    {
-                                        #        "mode": mode,
-                                        #        "feasibility_solving": True,
-                                        #        "feasibility_targets": target,
-                                        #    }
-                                        # )
+                                        vv.append(
+                                            {
+                                                "mode": mode,
+                                                "feasibility_solving": True,
+                                                "feasibility_targets": target,
+                                            }
+                                        )
 
                                         vv.append(
                                             {
@@ -78,8 +71,8 @@ class _Ca1Sgrad(Interface):
                                             {
                                                 "dopt_params": {
                                                     "surrogate_custom_training": "models.ops.joint",
-                                                    "n_epochs": 10,
-                                                    "resample_fraction": 0.5,
+                                                    # "n_epochs": 10,
+                                                    # "resample_fraction": 0.5,
                                                     "surrogate_custom_training_kwargs": kwargs,
                                                     **params,
                                                 }

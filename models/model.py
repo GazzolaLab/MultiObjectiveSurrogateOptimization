@@ -233,16 +233,16 @@ class Model(tf.keras.Model):
             trainable=False,
         )
 
-        self.min_mean_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
+        self.min_mean_yR = self.add_weight(
             name="min_mean_yR",
+            shape=[num_objectives],
+            initializer="zeros",
             trainable=False,
         )
-        self.max_std_yR = tf.Variable(
-            initial_value=np.zeros([num_objectives]),
-            dtype=tf.float32,
+        self.max_std_yR = self.add_weight(
             name="max_std_yR",
+            shape=[num_objectives],
+            initializer="zeros",
             trainable=False,
         )
 
@@ -445,7 +445,7 @@ class Model(tf.keras.Model):
             }
         elif self.mode == "c":
             loss = "binary_crossentropy"
-            metrics = acc
+            metrics = ["acc", tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
         elif self.mode == "o":
             loss = objective_loss
             metrics = ["mae"]
@@ -580,12 +580,16 @@ class Model(tf.keras.Model):
                             "constraints": yC_val,
                         },
                     )
+                    monitor_metrics = ["val_objectives_loss"]
                 elif self.mode == "c":
                     y_ = yC_train
                     val_ = (X_val, yC_val)
+                    monitor_metrics = ["val_loss"]
                 elif self.mode == "o":
                     y_ = y_train
                     val_ = (X_val, y_val)
+                    monitor_metrics = ["val_mae"]
+
                 history = self.fit(
                     X_train,
                     y_,
@@ -599,13 +603,7 @@ class Model(tf.keras.Model):
                             restore_best_weights=False,
                             mode="min",
                         )
-                        for mon in (
-                            [
-                                "val_objectives_loss",  # "val_constraints_loss"
-                            ]
-                            if self.mode == "c+o"
-                            else ["val_mae"]  # "val_loss"
-                        )
+                        for mon in monitor_metrics
                     ]
                     + [
                         tf.keras.callbacks.TerminateOnNaN(),
@@ -734,7 +732,7 @@ class Model(tf.keras.Model):
             method = self.normalize_targets
 
         if method is False:
-            return tf.constant(yR)
+            return tf.constant(yR, dtype=tf.float32)
 
         if adapt:
             if "max" in method or method == "range":
@@ -821,12 +819,21 @@ class Model(tf.keras.Model):
                 (y_pred["constraints"] > 0.5).astype(int).all(axis=1).astype(int)
             )
 
+            y_pred_C = (y_pred["constraints"] > 0.5).astype(int)
+            y_test_C = y_test["constraints"].astype(int)
+
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
-                "precision": float(precision_score(y_test_prime, y_pred_prime)),
-                "recall": float(recall_score(y_test_prime, y_pred_prime)),
-                "f1": float(f1_score(y_test_prime, y_pred_prime)),
+                "accuracy": float(accuracy_score(y_test_C, y_pred_C)),
+                "precision": float(
+                    precision_score(y_test_C, y_pred_C, average="micro")
+                ),
+                "recall": float(recall_score(y_test_C, y_pred_C, average="micro")),
+                "f1": float(f1_score(y_test_C, y_pred_C, average="micro")),
+                "global_accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "global_precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "global_recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "global_f1": float(f1_score(y_test_prime, y_pred_prime)),
                 "mdae": float(
                     normed(median_absolute_error)(
                         y_test["objectives"],
@@ -843,6 +850,7 @@ class Model(tf.keras.Model):
 
         if self.mode == "c":
             y_prob = self.predict(X_test, verbose=verbose)
+
             y_pred = (y_prob > 0.5).astype(int)
 
             y_test_prime = y_test.all(axis=1).astype(int)
@@ -866,12 +874,26 @@ class Model(tf.keras.Model):
                 )
                 return tbl
 
+            if verbose > 2:
+                print("\nMisclassified samples:")
+                diff_mask = y_pred != y_test
+                for i in range(len(y_test)):
+                    if diff_mask[i].any():
+                        print(f"Row {i}:")
+                        print(f"Predicted: {y_pred[i]}")
+                        print(f"Actual:    {y_test[i]}")
+                        print()
+
             return {
                 "epochs": self._last_fit_epochs,
-                "accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
-                "precision": float(precision_score(y_test_prime, y_pred_prime)),
-                "recall": float(recall_score(y_test_prime, y_pred_prime)),
-                "f1": float(f1_score(y_test_prime, y_pred_prime)),
+                "accuracy": float(accuracy_score(y_test, y_pred)),
+                "precision": float(precision_score(y_test, y_pred, average="macro")),
+                "recall": float(recall_score(y_test, y_pred, average="macro")),
+                "f1": float(f1_score(y_test, y_pred, average="macro")),
+                "global_accuracy": float(accuracy_score(y_test_prime, y_pred_prime)),
+                "global_precision": float(precision_score(y_test_prime, y_pred_prime)),
+                "global_recall": float(recall_score(y_test_prime, y_pred_prime)),
+                "global_f1": float(f1_score(y_test_prime, y_pred_prime)),
             }
 
         if self.mode == "o":
@@ -944,6 +966,7 @@ class Model(tf.keras.Model):
         zero_infeasible=False,
         verbose=1,
         return_trace=False,
+        renorm=False,
     ):
         if transform is None:
             if self.xlb is not None and self.xub is not None:
@@ -1051,6 +1074,10 @@ class Model(tf.keras.Model):
             derivatives = [tape.gradient(lt, input_sample) for lt in losses]
             del tape
 
+            if renorm and isinstance(transform, (list, tuple)):
+                rg = tf.constant([u - l for l, u in transform])
+                derivatives = [dl / rg for dl in derivatives]
+
             # balance via gradient norms
             if len(losses) > 1:
                 norms = [tf.norm(g) for g in derivatives]
@@ -1058,9 +1085,14 @@ class Model(tf.keras.Model):
                 factors = [ref_norm / (norm + 1e-8) for norm in norms]
                 loss = tf.reduce_sum([w * l for w, l in zip(factors, losses)])
                 grads = tf.reduce_sum([w * l for w, l in zip(factors, derivatives)])
-            else:
+            elif len(losses) == 1:
                 loss = losses[0]
                 grads = derivatives[0]
+            else:
+                # no losses, exit
+                loss = None
+                grads = []
+                break
 
             if iteration > max_iterations:
                 break
@@ -1080,7 +1112,10 @@ class Model(tf.keras.Model):
                 relative_iqr = iqr / abs(median) if median != 0 else iqr
 
                 if relative_iqr < 0.01:
-                    print("Loss is plateauing, stopping early")
+                    if verbose > 0:
+                        print(
+                            f"Loss is plateauing, stopping early after {len(loss_history)} steps."
+                        )
                     break
 
             if zero_infeasible and self.mode != "o":
@@ -1118,7 +1153,7 @@ class Model(tf.keras.Model):
         for layer in self.layers:
             layer.trainable = True
 
-        if np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
+        if loss is None or np.isnan(loss.numpy()) or np.isinf(loss.numpy()):
             # invalid optimization
             return X, False
 
@@ -1156,18 +1191,51 @@ class Model(tf.keras.Model):
 
         return x_filtered, loss_history
 
-    def sensitivity(self, X, reduction=lambda x: tf.reduce_mean(x, axis=0)):
+    def sensitivity(
+        self,
+        X,
+        reduction=lambda x: tf.reduce_mean(tf.math.abs(x), axis=0),
+        batch_size=1024,
+    ):
         X = tf.convert_to_tensor(X, dtype=tf.float32)
-        with tf.GradientTape(persistent=True) as tape:
-            tape.watch(X)
-            y_pred = self(X)
+        num_samples = X.shape[0]
+        num_batches = (num_samples + batch_size - 1) // batch_size
 
-        if self.mode == "c+o":
-            return {
-                k: reduction(tape.gradient(y_pred[k], X)).numpy() for k in y_pred.keys()
-            }
-        else:
-            return reduction(tape.gradient(y_pred, X)).numpy()
+        sens = {}
+        for start_idx in range(0, num_samples, batch_size):
+            end_idx = min(start_idx + batch_size, num_samples)
+            X_batch = X[start_idx:end_idx]
+
+            with tf.GradientTape(persistent=True) as tape:
+                tape.watch(X_batch)
+                y_pred = self(X_batch)
+
+            if self.mode == "o":
+                y_pred = {
+                    "objectives": y_pred,
+                    "constraints": None,
+                }
+            elif self.mode == "c":
+                y_pred = {
+                    "objectives": None,
+                    "constraints": y_pred,
+                }
+
+            for k in y_pred.keys():
+                if y_pred[k] is None:
+                    sens[k] = None
+                    continue
+
+                g = tape.gradient(y_pred[k], X_batch)
+
+                g = g * X_batch
+
+                batch_sens = reduction(g).numpy()
+                if k not in sens:
+                    sens[k] = np.zeros_like(batch_sens)
+                sens[k] += batch_sens * (end_idx - start_idx) / num_samples
+
+        return sens
 
 
 class Columnwise:

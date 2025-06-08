@@ -3,6 +3,17 @@ from interface.dmosopt import Dmosopt
 
 class Sopt(Dmosopt):
     @property
+    def dynamic_sampling(self) -> bool:
+        return self.config.dopt_params.get("dynamic_initial_sampling", None) is not None
+
+    @property
+    def dynamic_sampling_kwargs(self) -> dict:
+        if not self.dynamic_sampling:
+            return {}
+
+        return self.config.dopt_params.get("dynamic_initial_sampling_kwargs", {})
+
+    @property
     def custom_training(self) -> bool:
         return (
             self.config.dopt_params.get("surrogate_custom_training", None) is not None
@@ -57,16 +68,29 @@ class Sopt(Dmosopt):
         return f"O:{self.mO}/C:{self.mC}/S:{self.mS}"
 
     @property
+    def backbone(self):
+        if not self.custom_training_kwargs:
+            return None
+
+        return self.custom_training_kwargs.get("backbone", "resnet")
+
+    @property
     def trial(self):
         return self.context.predicate.get("trial", 0)
 
-    def get_model(self, name, **model_options):
+    def get_model(self, name=None, **model_options):
+        if name is None:
+            name = self.mO
+
+        if name == "-":
+            raise ValueError("No default model, please provide a model name.")
+
         if "joint" in name:
-            if "mlp" in name:
+            if "mlp" in self.backbone:
                 from models.mlp import MLP as Model
-            elif "resnet" in name:
+            elif "resnet" in self.backbone:
                 from models.resnet import Resnet as Model
-            elif "fttransformer" in name:
+            elif "fttransformer" in self.backbone:
                 from models.fttransformer import FTTransformer as Model
             else:
                 from models.transformer import Transformer as Model
@@ -83,6 +107,22 @@ class Sopt(Dmosopt):
         from models.wrapper import Wrapper
 
         return Wrapper(name, self.xlb, self.xub, **model_options)
+
+    def weights(self, epoch=-1):
+        if epoch < 0:
+            epoch = self.n_epochs + epoch
+
+        return self.local_directory(f"{epoch}.weights.h5")
+
+    def get_sa(self, name: str = "dgsm"):
+        from dmosopt import sa
+
+        return getattr(sa, "SA_" + name.upper())(
+            lo_bounds=self.xlb,
+            hi_bounds=self.xub,
+            param_names=self.parameter_names,
+            output_names=self.objective_names,
+        )
 
     def label(self):
         m = self.config.dopt_params.opt_id.replace("dmosopt_", "") + "::" + self.m

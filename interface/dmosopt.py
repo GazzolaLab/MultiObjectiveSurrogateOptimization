@@ -18,6 +18,8 @@ from dmosopt import indicators
 import numpy as np
 import pandas as pd
 import datetime
+import distwq
+
 
 sys_excepthook = sys.excepthook
 
@@ -287,7 +289,7 @@ class Dmosopt(Component):
             worker_debug=self.config.worker_debug,
         )
 
-        if MPI.COMM_WORLD.Get_rank() > 0:
+        if MPI.COMM_WORLD.Get_rank() != getattr(distwq, "controller_rank", 0):
             return
 
         try:
@@ -344,10 +346,10 @@ class Dmosopt(Component):
         return os.path.abspath(self.local_directory("dmosopt.h5"))
 
     def on_write_meta_data(self):
-        return MPI.COMM_WORLD.Get_rank() == 0
+        return MPI.COMM_WORLD.Get_rank() == getattr(distwq, "controller_rank", 0)
 
     def on_commit(self):
-        if MPI.COMM_WORLD.Get_rank() > 0:
+        if MPI.COMM_WORLD.Get_rank() != getattr(distwq, "controller_rank", 0):
             return False
 
     @cachable(file=False)
@@ -464,6 +466,8 @@ class Dmosopt(Component):
         mask = slice(None)
         if isinstance(region, (list, tuple)):
             mask = slice(*region)
+        elif isinstance(region, slice):
+            mask = region
 
         data = self.load_h5(filepath, opt_id, problem_id)
 
@@ -504,20 +508,22 @@ class Dmosopt(Component):
         with h5py.File(filepath, "r") as h5:
             stats = None
             if f"/{opt_id}/optimizer_stats" in h5:
-                epoch = 0
+                epoch = 0 if f"/{opt_id}/optimizer_stats/0" in h5 else 1
                 stats = []
                 while True:
                     if f"/{opt_id}/optimizer_stats/{epoch}" not in h5:
                         break
 
                     epoch_stats = h5[f"/{opt_id}/optimizer_stats/{epoch}/stats"]
-                    stats.append(epoch_stats[:])
+                    stats.append(
+                        {
+                            n: v
+                            for n, v in zip(epoch_stats[0].dtype.names, epoch_stats[0])
+                        }
+                    )
 
                     epoch += 1
-
-                stats = pd.DataFrame(
-                    np.concatenate(stats), columns=epoch_stats.dtype.names
-                )
+                stats = pd.DataFrame(stats)
 
             params = None
             if f"/{opt_id}/optimizer_params" in h5:
@@ -856,9 +862,7 @@ class Dmosopt(Component):
         if self.config.dopt_params.get("dynamic_initial_sampling", None) is not None:
             n_initial = getattr(self, "inferred_num_initial_samples", None)
             if n_initial is None:
-                raise RuntimeError(
-                    "Dynamic initial sampling is used, so the number of initial samples is not known. Call infer_num_initial_samples() first."
-                )
+                return self.infer_num_initial_samples()
             else:
                 return n_initial
 

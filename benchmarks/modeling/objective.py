@@ -224,6 +224,7 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
         ic_constant_val = ic_constant_0 + x0
 
     cell.soma.ic_constant = ic_constant_val
+    print("ic_constant_val used: ", ic_constant_val)
     h.finitialize(h.v_init)
     h.finitialize(h.v_init)
 
@@ -231,6 +232,47 @@ def init_cell(template_name, pp, v_hold=-60, celsius=36.0, ic_constant_val=None)
 
 
 def make_obj_fun(
+    protocol_config_dict, feature_dtypes, template_name, target_namespace, worker
+):
+    exp_protocol = ExperimentalProtocol(
+        protocol_config_dict, target_namespace=target_namespace
+    )
+
+    def obj(pp):
+        try:
+            return obj_fun(exp_protocol, feature_dtypes, template_name, pp)
+        except:
+            feature_values = np.array(
+                [
+                    tuple(
+                        -1
+                        for _ in range(
+                            {"Motoneuron": 10}[protocol_config_dict["Celltype"]]
+                        )
+                    )
+                ],
+                dtype=np.dtype(feature_dtypes),
+            )
+            obj_values = np.array(
+                [
+                    np.nan
+                    for _ in range({"Motoneuron": 4}[protocol_config_dict["Celltype"]])
+                ],
+            )
+            constr_values = np.array(
+                [
+                    0.0
+                    for _ in range({"Motoneuron": 8}[protocol_config_dict["Celltype"]])
+                ],
+                dtype=np.float32,
+            )
+
+            return obj_values, feature_values, constr_values
+
+    return obj
+
+
+def make_obj_fun_base(
     protocol_config_dict, feature_dtypes, template_name, target_namespace, worker
 ):
     exp_protocol = ExperimentalProtocol(
@@ -367,9 +409,11 @@ def obj_fun(exp_protocol, feature_dtypes, template_name, pp):
     # Compute objectives
     mean_spike_amplitude_range_dists = list(
         map(
-            lambda amp, target_amp: None
-            if np.isnan(target_amp[0])
-            else range_distance(amp, target_amp[0], target_amp[1]),
+            lambda amp, target_amp: (
+                None
+                if np.isnan(target_amp[0])
+                else range_distance(amp, target_amp[0], target_amp[1])
+            ),
             mean_spike_amplitudes,
             zip(exp_protocol.exp_i_lb_spk_amp, exp_protocol.exp_i_ub_spk_amp),
         )

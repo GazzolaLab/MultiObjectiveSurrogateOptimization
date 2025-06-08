@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Load the NEURON libraries
 h.load_file("stdrun.hoc")
-h.load_file("rn.hoc")
+#h.load_file("rn.hoc")
 
 pc = h.ParallelContext()
 if hasattr(pc, "mpiabort_on_error"):
