@@ -175,33 +175,6 @@ class WilsonCowanGraph:
         """Sigmoid activation function"""
         return 1 / (1 + np.exp(-x + theta))
     
-    
-    def dynamics(self, t, state):
-        """
-        Compute the right-hand side of the Wilson-Cowan equations
-        
-        Parameters:
-        t (float): Time
-        state (array): Current state of all nodes
-        
-        Returns:
-        array: Time derivatives of state variables
-        """
-        # Compute input to each node
-        total_input = self.compute_input(state)
-        
-        # Compute derivatives for each node
-        derivatives = np.zeros_like(state)
-        for idx, node in enumerate(self.nodes):
-            pop = self.G.nodes[node]['population']
-            derivatives[idx] = (
-                -state[idx] + 
-                self.sigmoid(total_input[idx], self.theta[pop])
-            ) / self.tau[pop]
-        
-        return derivatives
-
-
     def compute_input(self, state):
         """
         Compute input to each node based on current state
