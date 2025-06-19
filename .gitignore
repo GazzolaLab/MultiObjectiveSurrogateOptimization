@@ -8,6 +8,9 @@ figures/
 *.png
 *.svg
 *.jpg
+*.GDS
+*.gds
+*.p
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
