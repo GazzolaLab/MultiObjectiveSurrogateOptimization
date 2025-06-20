@@ -1,15 +1,22 @@
 import numpy as np
-from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.gridspec as gridspec
 import networkx as nx
 from collections import defaultdict
+import time
+import warnings
+from scipy.integrate import solve_ivp
+try:
+    from scikits.odes import ode
+    has_sundials = True
+except ImportError:
+    has_sundials = False
 
 class WilsonCowanGraph:
     def __init__(self, G, spatial_kernel='exponential', spatial_scale=1.0, 
                  dx=1.0, diffusion_strength=1.0, diffusion_populations=None,
-                 tau=None, theta=None):
+                 tau=None, theta=None, use_cvode=True):
         """
         Initialize Wilson-Cowan model on a graph with spatial and
         diffusive coupling.
@@ -18,9 +25,14 @@ class WilsonCowanGraph:
         G (networkx.DiGraph): Graph where:
             - nodes have 'population' attribute indicating population type
             - edges have 'weight' attribute for coupling strength
+        spatial_kernel (str): Type of spatial kernel ('exponential', 'gaussian', None)
+        spatial_scale (float): Spatial scale parameter
+        dx (float): Spatial discretization
+        diffusion_strength (float): Strength of diffusive coupling
+        diffusion_populations (list): Populations that have diffusive coupling
         tau (dict): Time constants for each population type
         theta (dict): Threshold values for each population type
-
+        use_cvode (bool): Whether to use CVODE (requires scikits.odes)
         """
         self.G = G.copy()
         self.spatial_kernel = spatial_kernel
@@ -28,38 +40,52 @@ class WilsonCowanGraph:
         self.dx = dx
         self.diffusion_strength = diffusion_strength
         self.diffusion_populations = [] if diffusion_populations is None else diffusion_populations
+        self.use_cvode = use_cvode
+        if use_cvode and not has_sundials:
+            warnings.warn("CVODE requested but scikits.odes not available.")
+            self.use_cvode = False
         
-        # Check for position attributes in nodes and add default if missing
-        pos = 0.0
-        for node in G.nodes():
-            if 'pos' not in G.nodes[node]:
-                nx.set_node_attributes(G, {node: {'pos': pos}})
-                pos += dx
-            else:
-                pos = G.nodes[node]['pos']
+        # Initialize graph with positions if missing
+        self._initialize_positions()
         
-        # Get all unique population types
+        # Get population information
         self.populations = sorted(set(nx.get_node_attributes(G, 'population').values()))
         self.n_populations = len(self.populations)
         
-        # Create population index mapping
+        # Create mappings
         self.pop_to_idx = {pop: idx for idx, pop in enumerate(self.populations)}
         self.idx_to_pop = {idx: pop for pop, idx in self.pop_to_idx.items()}
-        
-        # Create node ordering and reverse mapping
         self.nodes = list(G.nodes())
         self.node_to_idx = {node: idx for idx, node in enumerate(self.nodes)}
+        self.n_nodes = len(self.nodes)
         
-        # Set default parameters if not provided
-        if tau is None:
-            tau = {pop: 1.0 for pop in self.populations}
-        if theta is None:
-            theta = {pop: 4.0 for pop in self.populations}
-            
-        self.tau = tau
-        self.theta = theta
+        # Set default parameters
+        self.tau = tau if tau is not None else {pop: 1.0 for pop in self.populations}
+        self.theta = theta if theta is not None else {pop: 4.0 for pop in self.populations}
+        
+        # Create parameter arrays for vectorized operations
+        self._create_parameter_arrays()
+        
+        # Pre-compute coupling and diffusion matrices
+        self.coupling_matrices = self._compute_coupling_matrices()
+        self.laplacians = self._compute_laplacians()
+        
+        # Create combined matrices for efficient computation
+        self._create_combined_matrices()
+        
+        # Initialize external input
+        self.external_input = np.zeros(self.n_nodes)
+        
+    def _initialize_positions(self):
+        """Add default positions to nodes if missing"""
+        pos = 0.0
+        for node in self.G.nodes():
+            if 'pos' not in self.G.nodes[node]:
+                nx.set_node_attributes(self.G, {node: {'pos': pos}})
+                pos += self.dx
                 
-        # Create arrays for population-specific parameters
+    def _create_parameter_arrays(self):
+        """Create vectorized parameter arrays"""
         self.tau_array = np.array([
             self.tau[self.G.nodes[node]['population']]
             for node in self.nodes
@@ -68,64 +94,23 @@ class WilsonCowanGraph:
             self.theta[self.G.nodes[node]['population']]
             for node in self.nodes
         ])
-
-        # Create population indices
+        
         self.pop_indices = {}
         for pop in self.populations:
             self.pop_indices[pop] = np.array([
                 i for i, node in enumerate(self.nodes)
                 if self.G.nodes[node]['population'] == pop
             ])
-
-        # Initialize external input
-        self.external_input = {node: 0.0 for node in self.nodes}
-        
-        # Pre-compute adjacency matrices for each population interaction
-        self.coupling_matrices = self._compute_coupling_matrices()
-
-        # Compute Laplacian matrices for each population
-        self.laplacians = self._compute_laplacians()
-
-    def _compute_laplacians(self):
-        """
-        Compute Laplacian matrices for diffusive coupling within each population
-        """
-        laplacians = {}
-        for pop in self.populations:
-            if pop not in self.diffusion_populations:
-                continue
-            
-            # Create subgraph for this population
-            nodes = [n for n in self.G.nodes() if self.G.nodes[n]['population'] == pop]
-            subgraph = self.G.subgraph(nodes)
-            
-            # Compute Laplacian matrix
-            L = nx.laplacian_matrix(subgraph).toarray()
-            
-            # Convert to full node ordering
-            full_L = np.zeros((len(self.nodes), len(self.nodes)))
-            for i, node1 in enumerate(nodes):
-                for j, node2 in enumerate(nodes):
-                    full_L[self.node_to_idx[node1], self.node_to_idx[node2]] = L[i, j]
-            
-            laplacians[pop] = full_L
-        
-        return laplacians
-        
-    def spatial_weight(self, pos1, pos2):
-        """
-        Compute spatial weighting between two positions
-        
-        Parameters:
-        pos1, pos2: Position tuples/arrays
-        
-        Returns:
-        float: Spatial weight factor
-        """
+    
+    def _spatial_weight(self, pos1, pos2):
+        """Compute spatial weighting between two positions"""
         if self.spatial_kernel is None:
             return 1.0
             
-        distance = np.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(pos1, pos2)))
+        if np.isscalar(pos1):
+            distance = abs(pos1 - pos2)
+        else:
+            distance = np.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(pos1, pos2)))
         
         if self.spatial_kernel == 'exponential':
             return np.exp(-distance / self.spatial_scale)
@@ -133,21 +118,15 @@ class WilsonCowanGraph:
             return np.exp(-(distance / self.spatial_scale) ** 2)
         else:
             raise ValueError(f"Unknown spatial kernel: {self.spatial_kernel}")
-        
+    
     def _compute_coupling_matrices(self):
-        """
-        Compute coupling matrices for all population interactions.
-        
-        Returns:
-        dict: Dictionary of coupling matrices indexed by (source_pop, target_pop)
-        """
-        n_nodes = len(self.nodes)
+        """Compute coupling matrices for all population interactions"""
         matrices = {}
         
         # Initialize matrices for all population pairs
         for pop1 in self.populations:
             for pop2 in self.populations:
-                matrices[(pop1, pop2)] = np.zeros((n_nodes, n_nodes))
+                matrices[(pop1, pop2)] = np.zeros((self.n_nodes, self.n_nodes))
         
         # Fill matrices based on graph edges and spatial positions
         for edge in self.G.edges(data=True):
@@ -165,111 +144,317 @@ class WilsonCowanGraph:
             target_pos = np.array(self.G.nodes[target]['pos'])
             
             # Compute spatial weight
-            spatial_factor = self.spatial_weight(source_pos, target_pos)
+            spatial_factor = self._spatial_weight(source_pos, target_pos)
             
             matrices[(source_pop, target_pop)][target_idx, source_idx] = base_weight * spatial_factor
         
         return matrices
     
-    def sigmoid(self, x, theta):
-        """Sigmoid activation function"""
-        return 1 / (1 + np.exp(-x + theta))
+    def _compute_laplacians(self):
+        """Compute Laplacian matrices for diffusive coupling"""
+        laplacians = {}
+        
+        for pop in self.populations:
+            if pop not in self.diffusion_populations:
+                continue
+            
+            # Create subgraph for this population
+            nodes = [n for n in self.G.nodes() if self.G.nodes[n]['population'] == pop]
+            subgraph = self.G.subgraph(nodes)
+            
+            # Compute Laplacian matrix
+            L = nx.laplacian_matrix(subgraph).toarray()
+            
+            # Convert to full node ordering
+            full_L = np.zeros((self.n_nodes, self.n_nodes))
+            for i, node1 in enumerate(nodes):
+                for j, node2 in enumerate(nodes):
+                    full_L[self.node_to_idx[node1], self.node_to_idx[node2]] = L[i, j]
+            
+            laplacians[pop] = full_L
+        
+        return laplacians
     
-    def compute_input(self, state):
-        """
-        Compute input to each node based on current state
+    def _create_combined_matrices(self):
+        """Create combined coupling and diffusion matrices"""
         
-        Parameters:
-        state (array): Current state of all nodes
+        # Combine all coupling matrices into one large matrix
+        self.W_total = np.zeros((self.n_nodes, self.n_nodes))
         
-        Returns:
-        array: Input to each node
-        """
-        n_nodes = len(self.nodes)
-        # Initialize total input array
-        total_input = np.zeros_like(state)
-        
-        # Add synaptic coupling with spatial weighting
-        # For each population pair, compute the full contribution at once
         for target_pop in self.populations:
             target_indices = self.pop_indices[target_pop]
             for source_pop in self.populations:
                 source_indices = self.pop_indices[source_pop]
-                # Get the full coupling matrix for this population pair
                 coupling = self.coupling_matrices[(source_pop, target_pop)]
-                # Compute contribution from this source population
-                contribution = coupling[target_indices][:, source_indices] @ state[source_indices]
-                total_input[target_indices] += contribution
+                self.W_total[np.ix_(target_indices, source_indices)] = coupling[np.ix_(target_indices, source_indices)]
         
-        # Compute all diffusive contributions at once
+        # Create combined diffusion matrix
+        self.L_total = np.zeros((self.n_nodes, self.n_nodes))
         for pop in self.populations:
             if pop in self.laplacians:
                 pop_indices = self.pop_indices[pop]
                 laplacian = self.laplacians[pop]
-                diffusive_term = (self.diffusion_strength / (self.dx ** 2)) * (
-                    laplacian[pop_indices] @ state
-                )
-                total_input[pop_indices] += diffusive_term
+                self.L_total[np.ix_(pop_indices, pop_indices)] = laplacian[np.ix_(pop_indices, pop_indices)]
         
-        # Add external input
-        total_input += np.array([self.external_input[node] for node in self.nodes])
+        # Scale diffusion matrix
+        self.L_total *= (self.diffusion_strength / (self.dx ** 2))
+    
+    def sigmoid(self, x, theta):
+        """Sigmoid activation function"""
+        # Clip input to prevent overflow
+        x_clipped = np.clip(x - theta, -500, 500)
+        return 1 / (1 + np.exp(-x_clipped))
+    
+    def sigmoid_derivative(self, x, theta):
+        """Derivative of sigmoid function"""
+        s = self.sigmoid(x, theta)
+        return s * (1 - s)
+    
+    def compute_input(self, state):
+        """Compute total input to each node"""
+        # Synaptic coupling
+        synaptic_input = self.W_total @ state
+        
+        # Diffusive coupling
+        diffusive_input = self.L_total @ state
+        
+        # Total input
+        total_input = synaptic_input + diffusive_input + self.external_input
         
         return total_input
-
+    
     def dynamics(self, t, state):
-        """
-        Compute the right-hand side of the Wilson-Cowan equations
-        
-        Parameters:
-        t (float): Time
-        state (array): Current state of all nodes
-        
-        Returns:
-        array: Time derivatives of state variables
-        """
-        # Compute all inputs at once
+        """Compute the right-hand side of the Wilson-Cowan equations"""
+        # Compute total input
         total_input = self.compute_input(state)
         
-        # Compute derivatives for all nodes at once
-        derivatives = (-state + self.sigmoid(total_input, self.theta_array)) / self.tau_array
+        # Compute sigmoid activation
+        activation = self.sigmoid(total_input, self.theta_array)
+        
+        # Compute derivatives
+        derivatives = (-state + activation) / self.tau_array
         
         return derivatives
     
-    def simulate(self, T, dt, initial_conditions=None):
+    def jacobian(self, t, state):
         """
-        Simulate the model
+        Compute the analytical Jacobian matrix
+        
+        The Jacobian J[i,j] = \frac{\partial (dx_i/dt)} {\partial x_j}
+        
+        For Wilson-Cowan: dx_i/dt = (-x_i + sigmoid(input_i)) / tau_i
+        
+        Therefore: J[i,j] = \frac{\partial}{\partial x_j} [(-x_i + sigmoid(input_i)) / tau_i]
+                          = (1/tau_i) * [\partial sigmoid(input_i) / \partial x_j - s_ij]
+                          = (1/tau_i) * [sigmoid'(input_i) * \partial input_i / \partial x_j - s_ij]
+        
+        Where \frac{\partial input_i} {\partial x_j} = W_ij + L_ij (coupling + diffusion terms)
+        """
+        # Compute total input
+        total_input = self.compute_input(state)
+        
+        # Compute sigmoid derivative
+        sigmoid_deriv = self.sigmoid_derivative(total_input, self.theta_array)
+        
+        # Create Jacobian matrix
+        J = np.zeros((self.n_nodes, self.n_nodes))
+        for i in range(self.n_nodes):
+            tau_i = self.tau_array[i]
+            sigmoid_deriv_i = sigmoid_deriv[i]
+            
+            for j in range(self.n_nodes):
+                if i == j:
+                    # Diagonal terms: -1/tau_i + (1/tau_i) * sigmoid'_i * (W_ii + L_ii)
+                    J[i, j] = (-1 + sigmoid_deriv_i * (self.W_total[i, j] + self.L_total[i, j])) / tau_i
+                else:
+                    # Off-diagonal terms: (1/tau_i) * sigmoid'_i * (W_ij + L_ij)
+                    J[i, j] = sigmoid_deriv_i * (self.W_total[i, j] + self.L_total[i, j]) / tau_i
+        
+        return J
+    
+    def set_external_input(self, input_dict=None, input_array=None):
+        """Set external input to nodes"""
+        if input_dict is not None:
+            for node, value in input_dict.items():
+                if node in self.node_to_idx:
+                    self.external_input[self.node_to_idx[node]] = value
+        elif input_array is not None:
+            if len(input_array) == self.n_nodes:
+                self.external_input = np.array(input_array)
+            else:
+                raise ValueError("Input array length must match number of nodes")
+    
+    def simulate(self, T, dt=None, initial_conditions=None, method='CVODE', 
+                 rtol=1e-6, atol=1e-9, max_steps=10000):
+        """
+        Simulate the model using CVODE or scipy
         
         Parameters:
         T (float): Total simulation time
-        dt (float): Time step
-        initial_conditions (dict): Initial conditions for each node (optional)
+        dt (float): Output time step (for scipy) or output interval (for CVODE)
+        initial_conditions (array or dict): Initial conditions
+        method (str): Integration method ('CVODE', 'DOP853', 'RK45', 'Radau', 'BDF', 'LSODA')
+        rtol, atol (float): Relative and absolute tolerances
+        max_steps (int): Maximum number of internal steps
         
         Returns:
         tuple: Time points and solution arrays
         """
-        t_span = (0, T)
-        t_eval = np.arange(0, T, dt)
+        # Set default dt if not provided
+        if dt is None:
+            dt = T / 1000
         
+        # Prepare initial conditions
         if initial_conditions is None:
-            # Default: small random initial conditions
-            initial_state = 0.1 * np.random.rand(len(self.nodes))
+            y0 = 0.1 * np.random.rand(self.n_nodes)
+        elif isinstance(initial_conditions, dict):
+            y0 = np.array([initial_conditions.get(node, 0.1) for node in self.nodes])
         else:
-            initial_state = np.array([
-                initial_conditions[node] for node in self.nodes
-            ])
+            y0 = np.array(initial_conditions)
         
-        # Solve the system
-        solution = solve_ivp(
-            self.dynamics,
-            t_span,
-            initial_state,
-            method='DOP853',
-            t_eval=t_eval,
-            rtol=1e-6,
-            atol=1e-6
+        # Use CVODE if requested
+        if self.use_cvode and method == 'CVODE':
+            return self._simulate_cvode(T, dt, y0, rtol, atol, max_steps)
+        else:
+            return self._simulate_scipy(T, dt, y0, method, rtol, atol, max_steps)
+    
+    def _simulate_cvode(self, T, dt, y0, rtol, atol, max_steps):
+        """Simulate using CVODE from scikits.odes"""
+        # Create time points
+        t_eval = np.arange(0, T + dt, dt)
+        
+        # Set up CVODE solver
+        solver = ode('cvode', self.dynamics, jacfn=self.jacobian)
+        
+        # Set solver options
+        solver.set_options(
+            rtol=rtol,
+            atol=atol,
+            max_steps=max_steps,
+            linsolver='dense',  # Use dense linear solver for Jacobian
+            first_step=dt/100,  # Initial step size
+            max_step=dt*10      # Maximum step size
         )
         
+        # Initialize solver
+        solver.init_step(0.0, y0)
+        
+        # Solve
+        solution, info = solver.solve(t_eval, y0)
+        
+        if info.errors.t:
+            warnings.warn(f"CVODE integration errors: {info.errors}")
+        
+        return t_eval, solution.T  # Transpose to match scipy format
+    
+    def _simulate_scipy(self, T, dt, y0, method, rtol, atol, max_steps):
+        """Simulate using scipy.integrate.solve_ivp"""
+        t_span = (0, T)
+        t_eval = np.arange(0, T + dt, dt)
+        
+        # Prepare Jacobian for scipy
+        def jac_scipy(t, y):
+            return self.jacobian(t, y)
+        
+        # Solve the system
+        if method in ['Radau', 'BDF']:
+            # These methods can use Jacobian
+            solution = solve_ivp(
+                self.dynamics, t_span, y0,
+                method=method, t_eval=t_eval,
+                jac=jac_scipy,
+                rtol=rtol, atol=atol,
+                max_step=dt*10
+            )
+        else:
+            # Other methods don't use Jacobian
+            solution = solve_ivp(
+                self.dynamics, t_span, y0,
+                method=method, t_eval=t_eval,
+                rtol=rtol, atol=atol,
+                max_step=dt*10
+            )
+        
+        if not solution.success:
+            warnings.warn(f"Integration failed: {solution.message}")
+        
         return solution.t, solution.y
+    
+    def analyze_stability(self, equilibrium=None):
+        """
+        Analyze linear stability around an equilibrium point
+        
+        Parameters:
+        equilibrium (array): Equilibrium state to analyze (if None, find numerically)
+        
+        Returns:
+        dict: Stability analysis results
+        """
+        if equilibrium is None:
+            # Find equilibrium numerically
+            from scipy.optimize import fsolve
+            
+            def equilibrium_condition(state):
+                return self.dynamics(0.0, state)
+            
+            # Start from random initial guess
+            x0 = 0.1 * np.random.rand(self.n_nodes)
+            equilibrium = fsolve(equilibrium_condition, x0)
+            
+            if np.max(np.abs(self.dynamics(0.0, equilibrium))) > 1e-4:
+                warnings.warn("Could not find accurate equilibrium point")
+        
+        # Compute Jacobian at equilibrium
+        J = self.jacobian(0, equilibrium)
+        
+        # Compute eigenvalues
+        eigenvalues = np.linalg.eigvals(J)
+        
+        max_real_part = np.max(np.real(eigenvalues))
+        is_stable = max_real_part < 0
+        
+        # Find oscillatory modes
+        oscillatory_freqs = np.imag(eigenvalues[np.imag(eigenvalues) > 1e-10]) / (2 * np.pi)
+        
+        results = {
+            'equilibrium': equilibrium,
+            'jacobian': J,
+            'eigenvalues': eigenvalues,
+            'max_real_part': max_real_part,
+            'is_stable': is_stable,
+            'oscillatory_frequencies': oscillatory_freqs,
+            'condition_number': np.linalg.cond(J)
+        }
+        
+        return results
+    
+    def plot_eigenvalue_spectrum(self, equilibrium=None, figsize=(10, 6)):
+        """Plot eigenvalue spectrum of the Jacobian"""
+        stability_results = self.analyze_stability(equilibrium)
+        eigenvalues = stability_results['eigenvalues']
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        
+        # Complex plane plot
+        ax1.scatter(np.real(eigenvalues), np.imag(eigenvalues), alpha=0.7)
+        ax1.axvline(x=0, color='red', linestyle='--', alpha=0.5, label='Stability boundary')
+        ax1.set_xlabel('Real part')
+        ax1.set_ylabel('Imaginary part')
+        ax1.set_title('Eigenvalue Spectrum')
+        ax1.grid(True, alpha=0.3)
+        ax1.legend()
+        
+        # Real parts histogram
+        ax2.hist(np.real(eigenvalues), bins=20, alpha=0.7, edgecolor='black')
+        ax2.axvline(x=0, color='red', linestyle='--', alpha=0.5, label='Stability boundary')
+        ax2.set_xlabel('Real part of eigenvalues')
+        ax2.set_ylabel('Count')
+        ax2.set_title('Distribution of Real Parts')
+        ax2.grid(True, alpha=0.3)
+        ax2.legend()
+        
+        plt.tight_layout()
+        return fig, (ax1, ax2), stability_results
     
     def get_population_activities(self, solution):
         """
@@ -283,12 +468,10 @@ class WilsonCowanGraph:
         """
         activities = {}
         for pop in self.populations:
-            pop_indices = [
-                idx for idx, node in enumerate(self.nodes)
-                if self.G.nodes[node]['population'] == pop
-            ]
+            pop_indices = self.pop_indices[pop]
             activities[pop] = solution[pop_indices]
         return activities
+    
     
     def plot_state(self, t, solution, time, pop1='E'):
         """Plot current state of the system"""
@@ -323,7 +506,7 @@ class WilsonCowanGraph:
         plt.xlabel('Space')
         plt.ylabel('Activity')
         plt.legend()
-        plt.title(f't = {t[time_index]:.2f}')
+        plt.title(f't = {t[time_index]}')
         plt.grid(True)
         plt.show()
     
@@ -439,12 +622,10 @@ class WilsonCowanGraph:
             ax.text(-0.1 * n_nodes, mid, pop, horizontalalignment='right', verticalalignment='center')
             ax.text(mid, -0.1 * n_nodes, pop, horizontalalignment='center', verticalalignment='top')
         
-        # Set title and labels
         ax.set_title('Full Coupling Matrix')
         ax.set_xlabel('Source Node')
         ax.set_ylabel('Target Node')
         
-        # Add grid
         ax.grid(True, which='both', color='gray', linewidth=0.5, alpha=0.3)
         
         plt.tight_layout()
@@ -890,15 +1071,14 @@ class WilsonCowanGraph:
             plt.show()
         
         return anim
-    
-    
+
+
 # Example usage
-if __name__ == "__main__":
-    # Create a small test network with two populations
+def create_test_graph(n_each=64):
+    """Create a test network"""
     G = nx.DiGraph()
     
     # Add nodes for both populations in a ring topology
-    n_each = 64
     for i in range(n_each):
         angle = 2 * np.pi * i / n_each
         # E population on outer ring
@@ -909,42 +1089,53 @@ if __name__ == "__main__":
         G.add_node(f'I{i}', 
                   population='I',
                   pos=(np.cos(angle), np.sin(angle)))
-        
+    
     # Add connections
     for i in range(n_each):
-        # Connect E population nodes (nearest neighbors)
+        # E-E connections (recurrent excitation)
         G.add_edge(f'E{i}', f'E{(i+1)%n_each}', weight=10.0)
-        #G.add_edge(f'E{i}', f'E{(i-1)%n_each}', weight=1.0)
+        #G.add_edge(f'E{i}', f'E{(i-1)%n_each}', weight=8.0)
         
-        # Connect I population nodes (nearest neighbors)
+        # I-I connections (recurrent inhibition)
         G.add_edge(f'I{i}', f'I{(i+1)%n_each}', weight=-1.0)
         G.add_edge(f'I{i}', f'I{(i-1)%n_each}', weight=-1.0)
         
-        # Cross-population connections
+        # E->I connections
         G.add_edge(f'E{i}', f'I{i}', weight=4.0)
         G.add_edge(f'E{i}', f'I{(i+1)%n_each}', weight=4.0)
         G.add_edge(f'E{i}', f'I{(i-1)%n_each}', weight=4.0)
-        #G.add_edge(f'I{i}', f'E{i}', weight=-40.0)
-        #G.add_edge(f'I{i}', f'E{i}', weight=-36.0)
-        G.add_edge(f'I{i}', f'E{i}', weight=-12.0)
+        
+        # I->E connections
+        G.add_edge(f'I{i}', f'E{i}', weight=-11.0)
         G.add_edge(f'I{i}', f'E{(i+1)%n_each}', weight=-11.0)
         G.add_edge(f'I{i}', f'E{(i-1)%n_each}', weight=-11.0)
-        
+    
+    return G
+
+
+
+if __name__ == "__main__":
     # Create model
+    n_each = 128
+    G = create_test_graph(n_each=n_each)
+    
     model = WilsonCowanGraph(G, dx=0.5,
                              diffusion_strength=1.0,
                              diffusion_populations=['E'],
                              spatial_kernel='gaussian',
-                             spatial_scale=1.0,
+                             spatial_scale=1.5,
                              tau={'E': 0.05, 'I': 0.03},
                              theta={'E': 4.0, 'I': 3.5},)
-
+    
     # Add localized external input
     center_node = n_each // 2
+    input_dict = {}
     for i in range(n_each):
-        dist = min(abs(i - center_node), abs(i - (center_node + n_each))) # Account for periodic boundary
-        model.external_input[f'E{i}'] = 2.0 * np.exp(-dist/3)
+        dist = min(abs(i - center_node), abs(i - (center_node + n_each)))  # Account for periodic boundary
+        input_dict[f'E{i}'] = 2.0 * np.exp(-dist/3)
     
+    model.set_external_input(input_dict)
+        
     model.plot_network(layout_type='circular_populations')
     plt.show()
     
@@ -952,21 +1143,32 @@ if __name__ == "__main__":
     model.plot_coupling_matrices()
     model.plot_full_coupling_matrix()
     plt.show()
+
+    print("Analyzing stability...")
+    fig, axes, stability = model.plot_eigenvalue_spectrum()
+    plt.show()
     
+    print(f"System is {'stable' if stability['is_stable'] else 'unstable'}")
+    print(f"Maximum real part: {stability['max_real_part']:.6f}")
+    print(f"Oscillatory frequencies: {stability['oscillatory_frequencies']}")
+
     # Simulate
+    start_time = time.time()
     T = 60.0
     dt = 0.001
-    t, solution = model.simulate(T, dt)
-
+    t, solution = model.simulate(T, dt, method='BDF')
+    run_time = time.time() - start_time
+    print(f"Simulation completed in {run_time:.3f} s")
+    
     model.plot_state(t, solution, time=T)
     plt.show()
     
     model.plot_spectrograms(t, solution, 
-                            window_size=64,   # Smaller window for better time resolution
-                            overlap=0.75,     # 75% overlap between windows
+                            window_size=1024,   # Smaller window for better time resolution
+                            overlap=0.9,     # 75% overlap between windows
                             max_freq=100)     # Only show frequencies up to 100 Hz
     plt.show()
-    
+
     # Animate
-    model.animate_with_phase_space(t, solution,
-                                   layout_type='circular_populations')
+    #model.animate_with_phase_space(t, solution,
+    #                               layout_type='circular_populations')
