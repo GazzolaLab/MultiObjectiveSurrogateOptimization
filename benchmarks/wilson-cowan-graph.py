@@ -379,6 +379,111 @@ class WilsonCowanGraph:
             warnings.warn(f"Integration failed: {solution.message}")
         
         return solution.t, solution.y
+
+    # Torch version of dynamics function
+    def dynamics_torch(self, x):
+        """PyTorch version of the Wilson-Cowan dynamics function."""
+        try:
+            import torch
+        except ImportError:
+            raise ImportError("PyTorch is required for dynamics_torch. ")
+        # Convert matrices to torch tensors
+        W_total_torch = torch.tensor(self.W_total, dtype=torch.float64)
+        L_total_torch = torch.tensor(self.L_total, dtype=torch.float64)
+        tau_array_torch = torch.tensor(self.tau_array, dtype=torch.float64)
+        theta_array_torch = torch.tensor(self.theta_array, dtype=torch.float64)
+        external_torch = torch.tensor(self.external_input, dtype=torch.float64)
+        
+        synaptic_input = W_total_torch @ x
+        diffusive_input = L_total_torch @ x
+        total_input = synaptic_input + diffusive_input + external_torch
+        
+        activation = torch.sigmoid(total_input - theta_array_torch)
+        
+        derivatives = (-x + activation) / tau_array_torch
+        
+        return derivatives
+
+    def jacobian_autodiff(self, t, state):
+        """
+        Compute the Jacobian matrix using PyTorch automatic differentiation.
+
+        Parameters:
+        t (float): Time (not used but kept for interface compatibility)
+        state (array): Current state of all nodes
+
+        Returns:
+        ndarray: Jacobian matrix (n_nodes, n_nodes)
+        """
+        try:
+            import torch
+        except ImportError:
+            raise ImportError("PyTorch is required for automatic differentiation. ")
+
+        # Convert state to torch tensor
+        x_torch = torch.tensor(state, dtype=torch.float64, requires_grad=True)
+        
+        # Compute Jacobian using functional interface
+        J_torch = torch.autograd.functional.jacobian(self.dynamics_torch, x_torch)
+        
+        # Convert back to numpy
+        return J_torch.detach().numpy()
+
+    def verify_jacobian(self, t, state, rtol=1e-6, atol=1e-8):
+        """
+        Compares analytical Jacobian with automatic differentiation version.
+
+        Parameters:
+        t (float): Time
+        state (array): Current state
+        rtol, atol (float): Relative and absolute tolerances for comparison
+
+        Returns:
+        dict: Verification results including max error
+        """
+        try:
+            # Compute both Jacobians
+            J_analytical = self.jacobian(t, state)
+            J_autodiff = self.jacobian_autodiff(t, state)
+
+            # Compare
+            diff = np.abs(J_analytical - J_autodiff)
+            max_error = np.max(diff)
+            mean_error = np.mean(diff)
+
+            # Check agreement within tolerance
+            agreement = np.allclose(J_analytical, J_autodiff, rtol=rtol, atol=atol)
+
+            results = {
+                'analytical_jacobian': J_analytical,
+                'autodiff_jacobian': J_autodiff,
+                'max_error': max_error,
+                'mean_error': mean_error,
+                'agreement': agreement,
+                'rtol': rtol,
+                'atol': atol
+            }
+
+            # Print summary
+            if agreement:
+                print(f"Jacobian verification PASSED")
+                print(f"   Max error: {max_error:.2e}")
+                print(f"   Mean error: {mean_error:.2e}")
+            else:
+                print(f"Jacobian verification FAILED")
+                print(f"   Max error: {max_error:.2e} (tolerance: {atol:.2e})")
+                print(f"   Mean error: {mean_error:.2e}")
+
+                max_idx = np.unravel_index(np.argmax(diff), diff.shape)
+                print(f"   Max error at position [{max_idx[0]}, {max_idx[1]}]:")
+                print(f"     Analytical: {J_analytical[max_idx]:.6e}")
+                print(f"     Autodiff:   {J_autodiff[max_idx]:.6e}")
+
+            return results
+
+        except Exception as e:
+            print(f"Jacobian verification failed with error: {e}")
+            return {'error': str(e), 'agreement': False}
     
     def analyze_stability(self, equilibrium=None):
         """
@@ -1135,6 +1240,9 @@ if __name__ == "__main__":
         input_dict[f'E{i}'] = 2.0 * np.exp(-dist/3)
     
     model.set_external_input(input_dict)
+
+    test_state = 0.5 * np.random.rand(model.n_nodes)
+    model.verify_jacobian(0.0, test_state)
         
     model.plot_network(layout_type='circular_populations')
     plt.show()
