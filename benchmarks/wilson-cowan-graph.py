@@ -946,7 +946,7 @@ class WilsonCowanGraph:
                 nperseg=window_size,
                 noverlap=int(window_size * overlap),
                 detrend='constant',
-                scaling='spectrum'
+                scaling='density'
             )
             
             # Mean activity time series
