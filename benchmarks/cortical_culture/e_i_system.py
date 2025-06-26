@@ -2,9 +2,10 @@ import json
 import os
 import networkx as nx
 import numpy as np
-from scipy.integrate import solve_ivp
 from functools import partial
-from machinable.utils import load_file
+import diffrax
+import jax.numpy as jnp
+from benchmarks.cortical_culture.data_preprocessing import compute_band_power
 
 
 def obj_fun(pp, env, targets, t_end):
@@ -12,68 +13,50 @@ def obj_fun(pp, env, targets, t_end):
 
     t, y = env.run(t_end, 0.5)
 
-    E_activity = y[::2, :]
+    data = y[::2, :].T
 
-    spike_threshold = 0.5
-    E_diff = np.diff(E_activity > spike_threshold, axis=1)
-    spikes = [[] for _ in range(E_activity.shape[0])]
-    for channel_id in range(E_activity.shape[0]):
-        spike_indices = np.where(E_diff[channel_id, :] > 0)[0]
-        spike_times = t[spike_indices]
-        spikes[channel_id] = spike_times
+    q = compute_band_power(data)
 
-    if len(spikes) == 0:
-        return np.asarray([999.0])
+    means = q.mean().to_dict()
+    stds = q.std().to_dict()
 
-    bin_size = 1.0  # seconds
-    num_bins = int(np.ceil(t[-1] / bin_size))
-    model_binned_rates = np.zeros((len(spikes), num_bins))
+    objectives = []
+    for k, target in targets.items():
+        if k.endswith("_mean"):
+            observed = means[k.replace("_mean", "")]
+        elif k.endswith("_std"):
+            observed = stds[k.replace("_std", "")]
 
-    for channel_id, neuron_spikes in enumerate(spikes):
-        if len(neuron_spikes) > 0:
-            bin_indices = np.floor(neuron_spikes / bin_size).astype(int)
-            for bin_idx in bin_indices:
-                if bin_idx < num_bins:
-                    model_binned_rates[channel_id, bin_idx] += 1
+        objectives.append((observed - target) ** 2)
 
-    target_binned_rates = np.zeros((len(targets), num_bins))
-    for channel_id, neuron_spikes in enumerate(targets):
-        if len(neuron_spikes) > 0:
-            bin_indices = np.floor(neuron_spikes / bin_size).astype(int)
-            for bin_idx in bin_indices:
-                if bin_idx < num_bins:
-                    target_binned_rates[channel_id, bin_idx] += 1
-
-    if np.max(model_binned_rates) > 0:
-        model_binned_rates = model_binned_rates / np.max(model_binned_rates)
-    if np.max(target_binned_rates) > 0:
-        target_binned_rates = target_binned_rates / np.max(target_binned_rates)
-
-    firing_mismatch = np.mean((model_binned_rates - target_binned_rates) ** 2)
-
-    obj_values = np.asarray([firing_mismatch])
+    obj_values = np.asarray(objectives)
 
     return obj_values
 
 
-def obj_fun_init(
-    experimental_data,
-    worker=None,
-):
+def obj_fun_init(worker=None):
     env = Env()
 
-    t_end = 0.5
-    targets = load_file(experimental_data)
-    targets = [
-        np.array(channel_data)[np.array(channel_data) <= t_end]
-        for channel_data in targets
-    ]
+    # load experimental data
+    t_end = 60.0
+    targets = {
+        "Delta_mean": 23.491851806640625,
+        "Theta_mean": 3.3645029067993164,
+        "Alpha_mean": 0.62232905626297,
+        "Beta_mean": 14.114240646362305,
+        "Gamma_mean": 0.12134022265672684,
+        "Delta_std": 29.584436416625977,
+        "Theta_std": 3.922821044921875,
+        "Alpha_std": 1.4222825765609741,
+        "Beta_std": 99.20442962646484,
+        "Gamma_std": 0.2624305188655853,
+    }
 
     return partial(obj_fun, env=env, targets=targets, t_end=t_end)
 
 
 def sigmoid(x, theta):
-    return 1 / (1 + np.exp(-x + theta))
+    return 1 / (1 + jnp.exp(-x + theta))
 
 
 class Env:
@@ -96,7 +79,7 @@ class Env:
         self.params = params.copy()
         self._build_network()
         self._setup_populations()
-        self._compute_laplacians()
+        # self._compute_laplacians()
 
     def _build_network(self):
         G = nx.DiGraph()
@@ -167,7 +150,7 @@ class Env:
                         G.add_edge(f"I{i}", f"I{j}", weight=weight_ii)
 
         self.G = G
-        self.W = nx.adjacency_matrix(G).toarray()
+        self.W = jnp.array(nx.adjacency_matrix(G).toarray())
 
     def _setup_populations(self):
         self.nodes = list(self.G.nodes())
@@ -200,20 +183,20 @@ class Env:
 
             self.laplacians[pop] = full_L
 
-    def dynamics(self, t, state):
+    def dynamics(self, t, state, args=None):
         # vectorized dynamics with diffusion
         E = state[::2]
         I = state[1::2]
 
-        network_input = self.W.dot(state)
+        network_input = self.W @ state
         network_input_e = network_input[::2]
         network_input_i = network_input[1::2]
 
         local_e = self.params["E_E_c"] * E - self.params["E_I_c"] * I
         local_i = self.params["I_E_c"] * E - self.params["I_I_c"] * I
 
-        diffusion_input_e = np.zeros_like(E)
-        diffusion_input_i = np.zeros_like(I)
+        diffusion_input_e = jnp.zeros_like(E)
+        diffusion_input_i = jnp.zeros_like(I)
 
         if "E" in self.laplacians:
             pop_indices = self.pop_indices["E"]
@@ -231,46 +214,43 @@ class Env:
             )
             diffusion_input_i = diffusive_term
 
-        e_noise = 0
-        if self.params.get("E_noise", 0) > 0:
-            e_noise = np.random.normal(0, self.params["E_noise"], len(E))
-
-        i_noise = 0
-        if self.params.get("I_noise", 0) > 0:
-            i_noise = np.random.normal(0, self.params["I_noise"], len(I))
-
-        total_e = local_e + network_input_e + diffusion_input_e + e_noise
-        total_i = local_i + network_input_i + diffusion_input_i + i_noise
+        total_e = local_e + network_input_e + diffusion_input_e
+        total_i = local_i + network_input_i + diffusion_input_i
 
         dEdt = (-E + sigmoid(total_e, self.params["E_theta"])) / self.params["E_tau"]
         dIdt = (-I + sigmoid(total_i, self.params["I_theta"])) / self.params["I_tau"]
 
-        dydt = np.zeros(len(E) + len(I))
-        dydt[::2] = dEdt
-        dydt[1::2] = dIdt
+        dydt = jnp.zeros(len(E) + len(I))
+        dydt = dydt.at[::2].set(dEdt)
+        dydt = dydt.at[1::2].set(dIdt)
 
         return dydt
 
-    def run(self, T, dt, initial_conditions=None):
-        t_span = (0, T)
-        t_eval = np.arange(0, T, dt)
+    def run(self, T, dt=0.05, initial_conditions=None):
+        t0 = 0.0
+        t1 = T
+        steps = int(jnp.ceil((t1 - t0) / dt))
+        ts = jnp.linspace(t0, t1, steps)
 
         if initial_conditions is None:
             initial_state = 0.1 * np.random.rand(len(self.nodes))
+            initial_state = jnp.array(initial_state)
         else:
-            initial_state = np.array([initial_conditions[node] for node in self.nodes])
+            initial_state = jnp.array([initial_conditions[node] for node in self.nodes])
 
-        solution = solve_ivp(
-            self.dynamics,
-            t_span,
-            initial_state,
-            method="DOP853",
-            t_eval=t_eval,
-            rtol=1e-6,
-            atol=1e-6,
+        term = diffrax.ODETerm(self.dynamics)
+        solver = diffrax.Dopri5()
+        saveat = diffrax.SaveAt(ts=ts)
+        sol = diffrax.diffeqsolve(
+            term,
+            solver,
+            t0=t0,
+            t1=t1,
+            dt0=dt,
+            y0=initial_state,
+            saveat=saveat,
         )
-
-        return solution.t, solution.y
+        return sol.ts, sol.ys.T
 
 
 if __name__ == "__main__":
@@ -292,8 +272,6 @@ if __name__ == "__main__":
             "I_I_c": 0.0,
             "E_diffusion_strength": 0.5,
             "I_diffusion_strength": 0.0,
-            "E_noise": 0.1,
-            "I_noise": 0.1,
             "E_theta": 2.0,
             "I_theta": 3.5,
             "E_tau": 1.0,
@@ -301,9 +279,21 @@ if __name__ == "__main__":
         }
     )
 
-    t, y = env.run(10, 1)
+    t, y = env.run(60, 0.05)
 
     E = y[::2]
     I = y[1::2]
 
-    print(E)
+    print(E.shape)
+
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(12, 6))
+    plt.plot(t, E[0], label="Excitatory Neurons (E)", alpha=0.7, color="blue")
+    plt.plot(t, I[0], label="Inhibitory Neurons (I)", alpha=0.7, color="red")
+    plt.title("Neural Activity Over Time")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Activity")
+    plt.legend()
+    plt.grid()
+    fig.savefig("neural_activity.png")
