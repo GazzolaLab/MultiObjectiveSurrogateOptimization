@@ -11,11 +11,15 @@ from benchmarks.cortical_culture.data_preprocessing import compute_band_power
 def obj_fun(pp, env, targets, t_end):
     env.set_params(pp)
 
-    t, y = env.run(t_end, 0.5)
+    dt = 0.005  # twice as high as highest frequency (200 Hz)
+    t, y = env.run(t_end, dt)
 
     data = y[::2, :].T
 
-    q = compute_band_power(data)
+    scale = 327.29  # scale to match experimental units
+    offset = -215
+
+    q = compute_band_power(data * scale + offset, fs=1 / dt)
 
     means = q.mean().to_dict()
     stds = q.std().to_dict()
@@ -79,7 +83,7 @@ class Env:
         self.params = params.copy()
         self._build_network()
         self._setup_populations()
-        # self._compute_laplacians()
+        self._compute_laplacians()
 
     def _build_network(self):
         G = nx.DiGraph()
@@ -202,7 +206,7 @@ class Env:
             pop_indices = self.pop_indices["E"]
             laplacian = self.laplacians["E"]
             diffusive_term = (self.params["E_diffusion_strength"] / (self.dx**2)) * (
-                laplacian[pop_indices] @ state
+                laplacian[pop_indices][:, pop_indices] @ E
             )
             diffusion_input_e = diffusive_term
 
@@ -210,7 +214,7 @@ class Env:
             pop_indices = self.pop_indices["I"]
             laplacian = self.laplacians["I"]
             diffusive_term = (self.params["I_diffusion_strength"] / (self.dx**2)) * (
-                laplacian[pop_indices] @ state
+                laplacian[pop_indices][:, pop_indices] @ I
             )
             diffusion_input_i = diffusive_term
 
@@ -249,6 +253,7 @@ class Env:
             dt0=dt,
             y0=initial_state,
             saveat=saveat,
+            max_steps=100000,
         )
         return sol.ts, sol.ys.T
 
@@ -257,14 +262,14 @@ if __name__ == "__main__":
     env = Env()
     env.set_params(
         {
-            "connection_radius": 400.0,
+            "connection_radius": 800.0,
             "E_E_weight": 1.0,
             "E_I_weight": 1.0,
             "I_E_weight": 1.0,
             "I_I_weight": 1.0,
             "E_E_radius": 400.0,
-            "E_I_radius": 400.0,
-            "I_E_radius": 400.0,
+            "E_I_radius": 200.0,
+            "I_E_radius": 300.0,
             "I_I_radius": 400.0,
             "E_E_c": 10.0,
             "E_I_c": 10.0,
@@ -283,8 +288,6 @@ if __name__ == "__main__":
 
     E = y[::2]
     I = y[1::2]
-
-    print(E.shape)
 
     import matplotlib.pyplot as plt
 

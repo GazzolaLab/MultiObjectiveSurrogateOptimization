@@ -52,7 +52,11 @@ if __name__ == "__main__":
     timestamps = recording["timestamps"]  # (n_samples,)
     fs = recording["rate"]
 
+    # compute amplitude range mean across all channels
+    amplitude_range_mean = np.mean(np.ptp(data, axis=0))
+
     print(f"Samples: {data.shape}")
+    print(f"Amplitude range mean: {amplitude_range_mean:.2f} V")
     print(f"Sampling rate: {fs} Hz")
     print(f"Recording duration: {len(timestamps)/fs} seconds")
 
