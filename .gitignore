@@ -2,7 +2,6 @@ interface/remotes
 compiled/
 storage/
 index/
-figures/
 *.sqlite
 *.h5
 *.png
