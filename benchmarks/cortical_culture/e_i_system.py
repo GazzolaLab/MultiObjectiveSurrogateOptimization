@@ -17,7 +17,7 @@ def obj_fun(pp, env, targets, t_end):
     data = y[::2, :].T
 
     scale = 327.29  # scale to match experimental units
-    offset = -215
+    offset = 0
 
     q = compute_band_power(data * scale + offset, fs=1 / dt)
 
@@ -122,36 +122,26 @@ class Env:
                     rng = np.random.RandomState(seed_value)
 
                     if rng.random() < conn_prob:
-                        weight_ee = self.params.get("E_E_weight", 1.0) * np.exp(
-                            -distance / self.params.get("E_E_radius", connection_radius)
+                        G.add_edge(
+                            f"E{i}",
+                            f"E{j}",
+                            weight=self.params.get("E_E_weight", connection_radius),
                         )
-                        G.add_edge(f"E{i}", f"E{j}", weight=weight_ee)
-
-                        weight_ei = self.params.get("E_I_weight", 1.0) * np.exp(
-                            -distance
-                            / (self.params.get("E_I_radius", connection_radius))
+                        G.add_edge(
+                            f"E{i}",
+                            f"I{j}",
+                            weight=self.params.get("E_I_radius", connection_radius),
                         )
-                        G.add_edge(f"E{i}", f"I{j}", weight=weight_ei)
-
-                        weight_ie = (
-                            -1
-                            * self.params.get("I_E_weight", 1.0)
-                            * np.exp(
-                                -distance
-                                / (self.params.get("I_E_radius", connection_radius))
-                            )
+                        G.add_edge(
+                            f"I{i}",
+                            f"E{j}",
+                            weight=self.params.get("I_E_radius", connection_radius),
                         )
-                        G.add_edge(f"I{i}", f"E{j}", weight=weight_ie)
-
-                        weight_ii = (
-                            -1
-                            * self.params.get("I_I_weight", 1.0)
-                            * np.exp(
-                                -distance
-                                / (self.params.get("I_I_radius", connection_radius))
-                            )
+                        G.add_edge(
+                            f"I{i}",
+                            f"I{j}",
+                            weight=self.params.get("I_I_weight", connection_radius),
                         )
-                        G.add_edge(f"I{i}", f"I{j}", weight=weight_ii)
 
         self.G = G
         self.W = jnp.array(nx.adjacency_matrix(G).toarray())
@@ -237,7 +227,7 @@ class Env:
         ts = jnp.linspace(t0, t1, steps)
 
         if initial_conditions is None:
-            initial_state = 0.1 * np.random.rand(len(self.nodes))
+            initial_state = np.random.rand(len(self.nodes))
             initial_state = jnp.array(initial_state)
         else:
             initial_state = jnp.array([initial_conditions[node] for node in self.nodes])
