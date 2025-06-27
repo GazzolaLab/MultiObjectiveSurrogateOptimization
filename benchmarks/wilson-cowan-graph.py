@@ -16,7 +16,7 @@ except ImportError:
 class WilsonCowanGraph:
     def __init__(self, G, spatial_kernel='exponential', spatial_scale=1.0, 
                  dx=1.0, diffusion_strength=1.0, diffusion_populations=None,
-                 tau=None, theta=None, use_cvode=True):
+                 gain=None, saturation=None, tau=None, theta=None, use_cvode=True):
         """
         Initialize Wilson-Cowan model on a graph with spatial and
         diffusive coupling.
@@ -32,6 +32,8 @@ class WilsonCowanGraph:
         diffusion_populations (list): Populations that have diffusive coupling
         tau (dict): Time constants for each population type
         theta (dict): Threshold values for each population type
+        gain (dict): Sigmoid gain/slope for each population type
+        saturation (dict): Sigmoid saturation level for each population type
         use_cvode (bool): Whether to use CVODE (requires scikits.odes)
         """
         self.G = G.copy()
@@ -62,6 +64,8 @@ class WilsonCowanGraph:
         # Set default parameters
         self.tau = tau if tau is not None else {pop: 1.0 for pop in self.populations}
         self.theta = theta if theta is not None else {pop: 4.0 for pop in self.populations}
+        self.gain = gain if gain is not None else {pop: 1.0 for pop in self.populations}
+        self.saturation = saturation if saturation is not None else {pop: 1.0 for pop in self.populations}
         
         # Create parameter arrays for vectorized operations
         self._create_parameter_arrays()
@@ -92,6 +96,14 @@ class WilsonCowanGraph:
         ])
         self.theta_array = np.array([
             self.theta[self.G.nodes[node]['population']]
+            for node in self.nodes
+        ])
+        self.gain_array = np.array([
+            self.gain[self.G.nodes[node]['population']]
+            for node in self.nodes
+        ])
+        self.saturation_array = np.array([
+            self.saturation[self.G.nodes[node]['population']]
             for node in self.nodes
         ])
         
@@ -199,16 +211,25 @@ class WilsonCowanGraph:
         # Scale diffusion matrix
         self.L_total *= (self.diffusion_strength / (self.dx ** 2))
     
-    def sigmoid(self, x, theta):
-        """Sigmoid activation function"""
+    def sigmoid(self, x, theta, gain, saturation):
+        """
+        Sigmoid activation function
+        
+        Parameters:
+        x: input
+        theta: threshold
+        gain: slope/gain parameter (higher = steeper)
+        saturation: saturation level (max output)
+        """
         # Clip input to prevent overflow
-        x_clipped = np.clip(x - theta, -500, 500)
-        return 1 / (1 + np.exp(-x_clipped))
+        x_clipped = np.clip(gain * (x - theta), -500, 500)
+        return saturation / (1 + np.exp(-x_clipped))
     
-    def sigmoid_derivative(self, x, theta):
+    def sigmoid_derivative(self, x, theta, gain, saturation):
         """Derivative of sigmoid function"""
-        s = self.sigmoid(x, theta)
-        return s * (1 - s)
+        x_clipped = np.clip(gain * (x - theta), -500, 500)
+        exp_term = np.exp(-x_clipped)
+        return (saturation * gain * exp_term) / ((1 + exp_term) ** 2)
     
     def compute_input(self, state):
         """Compute total input to each node"""
@@ -229,7 +250,8 @@ class WilsonCowanGraph:
         total_input = self.compute_input(state)
         
         # Compute sigmoid activation
-        activation = self.sigmoid(total_input, self.theta_array)
+        activation = self.sigmoid(total_input, self.theta_array, 
+                                  self.gain_array, self.saturation_array)
         
         # Compute derivatives
         derivatives = (-state + activation) / self.tau_array
@@ -254,7 +276,8 @@ class WilsonCowanGraph:
         total_input = self.compute_input(state)
         
         # Compute sigmoid derivative
-        sigmoid_deriv = self.sigmoid_derivative(total_input, self.theta_array)
+        sigmoid_deriv = self.sigmoid_derivative(total_input, self.theta_array,
+                                                self.gain_array, self.saturation_array)
         
         # Create Jacobian matrix
         J = np.zeros((self.n_nodes, self.n_nodes))
@@ -392,13 +415,16 @@ class WilsonCowanGraph:
         L_total_torch = torch.tensor(self.L_total, dtype=torch.float64)
         tau_array_torch = torch.tensor(self.tau_array, dtype=torch.float64)
         theta_array_torch = torch.tensor(self.theta_array, dtype=torch.float64)
+        gain_array_torch = torch.tensor(self.gain_array, dtype=torch.float64)
+        saturation_array_torch = torch.tensor(self.saturation_array, dtype=torch.float64)
         external_torch = torch.tensor(self.external_input, dtype=torch.float64)
         
         synaptic_input = W_total_torch @ x
         diffusive_input = L_total_torch @ x
         total_input = synaptic_input + diffusive_input + external_torch
         
-        activation = torch.sigmoid(total_input - theta_array_torch)
+        x_clipped = torch.clamp(gain_array_torch * (total_input - theta_array_torch), -500, 500)
+        activation = saturation_array_torch / (1 + torch.exp(-x_clipped))
         
         derivatives = (-x + activation) / tau_array_torch
         
@@ -484,6 +510,7 @@ class WilsonCowanGraph:
         except Exception as e:
             print(f"Jacobian verification failed with error: {e}")
             return {'error': str(e), 'agreement': False}
+
     
     def analyze_stability(self, equilibrium=None):
         """
@@ -946,7 +973,7 @@ class WilsonCowanGraph:
                 nperseg=window_size,
                 noverlap=int(window_size * overlap),
                 detrend='constant',
-                scaling='density'
+                scaling='spectrum'
             )
             
             # Mean activity time series
@@ -1211,9 +1238,9 @@ def create_test_graph(n_each=64):
         G.add_edge(f'E{i}', f'I{(i-1)%n_each}', weight=4.0)
         
         # I->E connections
-        G.add_edge(f'I{i}', f'E{i}', weight=-11.0)
-        G.add_edge(f'I{i}', f'E{(i+1)%n_each}', weight=-11.0)
-        G.add_edge(f'I{i}', f'E{(i-1)%n_each}', weight=-11.0)
+        for j in range(-3, 4):  # Wide inhibitory influence
+            target = (i + j) % n_each
+            G.add_edge(f'I{i}', f'E{target}', weight=-3.0)
     
     return G
 
@@ -1229,8 +1256,10 @@ if __name__ == "__main__":
                              diffusion_populations=['E'],
                              spatial_kernel='gaussian',
                              spatial_scale=1.5,
-                             tau={'E': 0.05, 'I': 0.03},
-                             theta={'E': 4.0, 'I': 3.5},)
+                             gain={'E': 2.0, 'I': 3.0},  # Steeper inhibitory response
+
+                             tau={'E': 0.02, 'I': 0.01},
+                             theta={'E': 4.0, 'I': 3.0},)
     
     # Add localized external input
     center_node = n_each // 2
@@ -1241,9 +1270,9 @@ if __name__ == "__main__":
     
     model.set_external_input(input_dict)
 
-    test_state = 0.5 * np.random.rand(model.n_nodes)
+    test_state = 0.1 * np.random.rand(model.n_nodes)
     model.verify_jacobian(0.0, test_state)
-        
+    
     model.plot_network(layout_type='circular_populations')
     plt.show()
     
@@ -1264,7 +1293,7 @@ if __name__ == "__main__":
     start_time = time.time()
     T = 60.0
     dt = 0.001
-    t, solution = model.simulate(T, dt, method='BDF')
+    t, solution = model.simulate(T, dt, method='DOP853')
     run_time = time.time() - start_time
     print(f"Simulation completed in {run_time:.3f} s")
     
@@ -1278,5 +1307,5 @@ if __name__ == "__main__":
     plt.show()
 
     # Animate
-    #model.animate_with_phase_space(t, solution,
-    #                               layout_type='circular_populations')
+    model.animate_with_phase_space(t, solution,
+                                   layout_type='circular_populations')
