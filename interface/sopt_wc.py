@@ -43,7 +43,7 @@ class SoptWc(Sopt):
                     "Gamma_std",
                 ],
                 "space": {
-                    #"connection_radius": [100.0, 400.0],  # um
+                    "distance_scale": [100.0, 1000.0],  # um
                     "E_E_weight": [0.01, 100.0],
                     "E_I_weight": [0.01, 100.0],
                     "I_E_weight": [0.01, 100.0],

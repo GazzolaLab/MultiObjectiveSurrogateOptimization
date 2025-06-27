@@ -104,44 +104,27 @@ class Env:
                 population_type="inhibitory",
             )
 
-        connection_radius = self.params.get("connection_radius", 400.0)  # um
-
+        distance_scale = self.params.get("distance_scale", 200.0)
         for i, pos_i in enumerate(self.system["electrodes"]):
             for j, pos_j in enumerate(self.system["electrodes"]):
                 if i == j:
                     continue
-
                 distance = np.sqrt(
                     (pos_i[0] - pos_j[0]) ** 2 + (pos_i[1] - pos_j[1]) ** 2
                 )
-
-                if distance <= connection_radius:
-                    conn_prob = np.exp(-distance / (connection_radius / 2))
-
-                    seed_value = hash(f"{i}_{j}") % (2**32)
-                    rng = np.random.RandomState(seed_value)
-
-                    if rng.random() < conn_prob:
-                        G.add_edge(
-                            f"E{i}",
-                            f"E{j}",
-                            weight=self.params.get("E_E_weight", connection_radius),
-                        )
-                        G.add_edge(
-                            f"E{i}",
-                            f"I{j}",
-                            weight=self.params.get("E_I_radius", connection_radius),
-                        )
-                        G.add_edge(
-                            f"I{i}",
-                            f"E{j}",
-                            weight=self.params.get("I_E_radius", connection_radius),
-                        )
-                        G.add_edge(
-                            f"I{i}",
-                            f"I{j}",
-                            weight=self.params.get("I_I_weight", connection_radius),
-                        )
+                weight = np.exp(-distance / distance_scale)
+                G.add_edge(
+                    f"E{i}", f"E{j}", weight=self.params.get("E_E_weight", 1.0) * weight
+                )
+                G.add_edge(
+                    f"E{i}", f"I{j}", weight=self.params.get("E_I_weight", 1.0) * weight
+                )
+                G.add_edge(
+                    f"I{i}", f"E{j}", weight=self.params.get("I_E_weight", 1.0) * weight
+                )
+                G.add_edge(
+                    f"I{i}", f"I{j}", weight=self.params.get("I_I_weight", 1.0) * weight
+                )
 
         self.G = G
         self.W = jnp.array(nx.adjacency_matrix(G).toarray())
@@ -252,10 +235,10 @@ if __name__ == "__main__":
     env = Env()
     env.set_params(
         {
-            "connection_radius": 800.0,
-            "E_E_weight": 1.0,
+            "distance_scale": 100.0,
+            "E_E_weight": 23.0,
             "E_I_weight": 1.0,
-            "I_E_weight": 1.0,
+            "I_E_weight": 133.0,
             "I_I_weight": 1.0,
             "E_E_radius": 400.0,
             "E_I_radius": 200.0,
@@ -281,12 +264,22 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(12, 6))
-    plt.plot(t, E[0], label="Excitatory Neurons (E)", alpha=0.7, color="blue")
-    plt.plot(t, I[0], label="Inhibitory Neurons (I)", alpha=0.7, color="red")
-    plt.title("Neural Activity Over Time")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Activity")
-    plt.legend()
-    plt.grid()
+    fig, ax = plt.subplots(figsize=(8, 20))
+    n_channels = E.shape[0]
+    offset = 0.5
+
+    for i in range(n_channels):
+        ax.plot(t, E[i] + i * offset, label=f"E {i}", color="blue", alpha=0.7)
+        ax.plot(
+            t, I[i] + i * offset, label=f"I {i}", color="red", alpha=0.7, linestyle="--"
+        )
+
+    ax.set_title("Neural Activity Over Time (All Channels)")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Activity (offset per channel)")
+    # ax.set_yticks([i * offset for i in range(n_channels)])
+    # ax.set_yticklabels([f"Ch {i}" for i in range(n_channels)])
+    # ax.grid(True)
+    # ax.legend(loc="upper right", ncol=2, fontsize="small")
+    fig.tight_layout()
     fig.savefig("neural_activity.png")
