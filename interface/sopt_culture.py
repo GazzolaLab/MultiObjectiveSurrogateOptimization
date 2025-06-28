@@ -36,10 +36,6 @@ class Culture(Sopt):
         operational_config["nprocs_per_worker"] = nprocs_per_worker
 
         network_config.update(operational_config.get("kwargs", {}))
-        if not os.path.isabs(network_config["config"]):
-            network_config["config"] = os.path.join(
-                os.path.dirname(filepath), network_config["config"]
-            )
 
         env = Env(**network_config)
 

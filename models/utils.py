@@ -1,5 +1,4 @@
 import numpy as np
-import seaborn as sns
 from matplotlib.colors import LogNorm
 from matplotlib import pyplot as plt
 from sklearn.utils import resample
@@ -90,6 +89,8 @@ def convert_to_k(number):
 
 
 def constraint_map(constraints, resolution=10):
+    import seaborn as sns
+    
     q = (constraints.to_numpy() > 0).astype(int)
     # append global
     q = np.concatenate((q, q.all(axis=1).astype(int).reshape(-1, 1)), axis=1)
