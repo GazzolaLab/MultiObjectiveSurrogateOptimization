@@ -22,23 +22,27 @@ def obj_fun(pp, env, targets, t_end):
     dt = 0.005  # twice as high as highest frequency (200 Hz)
     t, y = env.run(t_end, dt)
 
-    data = y.T
+    data = np.array(y).T
 
     scale = 327.29  # scale to match experimental units
     offset = 0
 
-    q = compute_band_power(data * scale + offset, fs=1 / dt)
+    try:
+        q = compute_band_power(data * scale + offset, fs=1 / dt)
 
-    means = q.mean().to_dict()
-    stds = q.std().to_dict()
+        means = q.mean().to_dict()
+        stds = q.std().to_dict()
+    except:
+        means = {}
+        stds = {}
 
     objectives = []
     features = []
     for k, target in targets.items():
         if k.endswith("_mean"):
-            observed = means[k.replace("_mean", "")]
+            observed = means.get(k.replace("_mean", ""), -1)
         elif k.endswith("_std"):
-            observed = stds[k.replace("_std", "")]
+            observed = stds.get(k.replace("_std", ""), -1)
 
         objectives.append((observed - target) ** 2)
         features.append(observed)
@@ -484,24 +488,24 @@ class Env:
         for i in range(N):
             # E-E connections (recurrent excitation)
             G.add_edge(
-                f"E{i}", f"E{(i+1)%N}", weight=self.params.get("E_E_weight", 0.0)
+                f"E{i}", f"E{(i + 1) % N}", weight=self.params.get("E_E_weight", 0.0)
             )
 
             # I-I connections (recurrent inhibition)
             G.add_edge(
-                f"I{i}", f"I{(i+1)%N}", weight=-self.params.get("I_I_weight", 0.0)
+                f"I{i}", f"I{(i + 1) % N}", weight=-self.params.get("I_I_weight", 0.0)
             )
             G.add_edge(
-                f"I{i}", f"I{(i-1)%N}", weight=-self.params.get("I_I_weight", 0.0)
+                f"I{i}", f"I{(i - 1) % N}", weight=-self.params.get("I_I_weight", 0.0)
             )
 
             # E->I connections
             G.add_edge(f"E{i}", f"I{i}", weight=self.params.get("E_I_weight", 1.0))
             G.add_edge(
-                f"E{i}", f"I{(i+1)%N}", weight=self.params.get("E_I_weight", 1.0)
+                f"E{i}", f"I{(i + 1) % N}", weight=self.params.get("E_I_weight", 1.0)
             )
             G.add_edge(
-                f"E{i}", f"I{(i-1)%N}", weight=self.params.get("E_I_weight", 1.0)
+                f"E{i}", f"I{(i - 1) % N}", weight=self.params.get("E_I_weight", 1.0)
             )
 
             # I->E connections, wider inhibition
