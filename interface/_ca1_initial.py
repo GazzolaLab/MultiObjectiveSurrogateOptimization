@@ -26,8 +26,6 @@ class _Ca1Initial(Interface):
                         {
                             "dopt_params.surrogate_method_name": "megp",
                         },
-                        "~joint_model(mode='o')",
-                        "~joint_model(mode='c+o')",
                     ]:
                         get(
                             [
