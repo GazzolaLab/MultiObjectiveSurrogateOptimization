@@ -7,7 +7,6 @@ class _E_I_WC(Interface):
         for trial in range(1):
             with get("machinable.scope", {"trial": trial}):
                 for version in [
-                    {},
                     {
                         "dopt_params.surrogate_method_name": "gpr",
                     },
