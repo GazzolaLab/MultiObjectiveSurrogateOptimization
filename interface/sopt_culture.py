@@ -5,7 +5,10 @@ from miv_simulator.env import Env
 from miv_simulator.optimization import optimization_params
 from miv_simulator.utils import from_yaml
 import datetime
-import os
+from mpi4py import MPI
+from dmosopt import dmosopt
+from dmosopt import config
+from machinable.config import to_dict
 
 
 class Culture(Sopt):
@@ -81,6 +84,7 @@ class Culture(Sopt):
                 },
             },
             "nprocs_per_worker": nprocs_per_worker,
+            "worker_debug": True,
         }
 
     def version_from_config(
@@ -166,6 +170,62 @@ class Culture(Sopt):
             },
             "nprocs_per_worker": nprocs_per_worker,
         }
+
+    def __call__(self) -> None:
+        ## HACK: override to ensure the correct parsing of tuples in obj_fun_init_args
+
+        if MPI.COMM_WORLD.Get_rank() == 0:
+            params = to_dict(self.config.dopt_params)
+            if "file_path" not in params:
+                params["file_path"] = self.output_filepath
+            if "local_random" not in params and "random_seed" not in params:
+                params["random_seed"] = self.seed
+            for f in [
+                "feature_dtypes",
+                "objective_names",
+                "constraint_names",
+                "metadata",
+            ]:
+                # users may specify these fields in terms of importable objects
+                #  to avoid repetition or use custom types
+                if f in params and isinstance(params[f], str):
+                    fi = config.import_object_by_path(params[f])
+                    if callable(fi):
+                        fi = fi(self)
+                    params[f] = fi
+
+            # OVERRIDE:
+            def _o(p):
+                if isinstance(p["sec_type"], list):
+                    p["sec_type"] = tuple(p["sec_type"])
+                return p
+
+            params["obj_fun_init_args"]["param_tuples"] = [
+                _o(param_tuple)
+                for param_tuple in params["obj_fun_init_args"]["param_tuples"]
+            ]
+            # OVERRIDE^
+
+            params = MPI.COMM_WORLD.bcast(params, root=0)
+        else:
+            params = MPI.COMM_WORLD.bcast(None, root=0)
+
+        run = dmosopt.run(
+            dopt_params=params,
+            time_limit=self.config.time_limit,
+            feasible=self.config.feasible,
+            return_features=self.config.return_features,
+            return_constraints=self.config.return_constraints,
+            spawn_workers=self.config.spawn_workers,
+            sequential_spawn=self.config.sequential_spawn,
+            spawn_startup_wait=self.config.spawn_startup_wait,
+            spawn_executable=self.config.spawn_executable,
+            spawn_args=self.config.spawn_args,
+            nprocs_per_worker=self.config.nprocs_per_worker,
+            collective_mode=self.config.collective_mode,
+            verbose=self.config.verbose,
+            worker_debug=self.config.worker_debug,
+        )
 
     def compute_context(self):
         context = super().compute_context()
