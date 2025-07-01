@@ -8,7 +8,7 @@ class _Ca1Culture(Interface):
             [
                 f"""~from_protocol(
                 './benchmarks/hippocampal_dissociated_culture/config/optimize_network.yaml',
-                279,
+                291,
                 arena_id="A",
                 mechanisms_path="benchmarks/hippocampal_dissociated_culture/mechanisms",
                 spike_input_path="Slice/CA1_Slice_100_dynamical_response_features.h5",
