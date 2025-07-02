@@ -14,9 +14,12 @@ class _E_I_WC(Interface):
                         "dopt_params.surrogate_method_name": "megp",
                     },
                     "~joint_model(mode='o', backbone='resnet')",
-                    # "~joint_model(mode='o', backbone='fttransformer')",
+                    "~joint_model(mode='o', backbone='fttransformer')",
                 ]:
-                    get("interface.sopt_wc", version).launch()
+                    get(
+                        "interface.sopt_wc",
+                        [version, {"dopt_params.resample_fraction": 0.1}],
+                    ).launch()
 
     def inspect(self):
         print(self.components[0].get_best()["y"])
