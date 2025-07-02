@@ -1030,10 +1030,15 @@ class Model(tf.keras.Model):
                     logits_c = prediction
 
                 if "o" in self.mode and "objective" in targets:
-                    y_ = tf.constant(self.y_)
+                    y_ = tf.constant(self.y_, dtype=tf.float32)
                     o = self.norm_output(logits_o, inverse=True)
 
-                    nadir = tf.reduce_max(tf.concat([o, y_], axis=0), axis=0)
+                    nadir = tf.reduce_max(
+                        tf.concat(
+                            [tf.cast(o, tf.float32), tf.cast(y_, tf.float32)], axis=0
+                        ),
+                        axis=0,
+                    )
 
                     front = o / (nadir + 1e-8)
                     reference = tf.ones_like(nadir) * 1.1
@@ -1061,8 +1066,8 @@ class Model(tf.keras.Model):
 
                 if self.X_raw_ is not None and "distance" in targets:
                     # normalize input_sample and X_ to [0,1] using bounds
-                    xlb = tf.constant(self.xlb)
-                    xub = tf.constant(self.xub)
+                    xlb = tf.constant(self.xlb, dtype=tf.float32)
+                    xub = tf.constant(self.xub, dtype=tf.float32)
                     r = xub - xlb
                     # maximize pairwise distance to ensure exploration
                     losses.append(
