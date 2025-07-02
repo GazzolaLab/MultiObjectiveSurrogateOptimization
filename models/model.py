@@ -1051,6 +1051,7 @@ class Model(tf.keras.Model):
                     losses.append(prefix * score)
 
                 if "c" in self.mode and "constraint" in targets:
+                    prefix = -1 if "-constraint" in targets else 1
                     losses.append(
                         tf.keras.losses.BinaryFocalCrossentropy()(
                             tf.constant(
