@@ -800,8 +800,8 @@ class Model(tf.keras.Model):
         def normed(metric):
             def _w(y_true, y_pred, *args, **kwargs):
                 return metric(
-                    self.norm_output(y_true).numpy(),
-                    self.norm_output(y_pred).numpy(),
+                    np.nan_to_num(self.norm_output(y_true).numpy()),
+                    np.nan_to_num(self.norm_output(y_pred).numpy()),
                     *args,
                     **kwargs,
                 )
