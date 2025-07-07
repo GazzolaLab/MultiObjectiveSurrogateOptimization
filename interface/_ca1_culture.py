@@ -41,38 +41,43 @@ class _Ca1Culture(Interface):
         get(
             "interface.sopt_culture",
             baseline
-            + {
+            + [
                 {
                     "dopt_params.surrogate_method_name": "megp",
                     "dopt_params.surrogate_method_kwargs": {},
                 }
-            },
-        ).launch()
-
-        get(
-            "interface.sopt_culture",
-            baseline
-            + [
-                f"~joint_model(mode='c+o', backbone='resnet')",
-                {
-                    "dopt_params": {
-                        "dynamic_initial_sampling": "models.ops.dynamic_sampling",
-                        "dynamic_initial_sampling_kwargs": {
-                            "samples_per_iteration": 50,
-                            "max_samples": 284,  # n_initial
-                            "stop_condition": False,  # "convergence_condition",
-                            # "convergence_condition": "global_f1 > 0.5",
-                            "mode": "c+o",
-                            "backbone": "resnet",
-                            "feasibility_solving": True,
-                            "feasibility_targets": "objective constraint",
-                            "verbose": 1,
-                        },
-                        "n_initial": 1,
-                    }
-                },
             ],
         ).launch()
+
+        for backbone in [
+            ("resnet", "resnet"),
+            # ("resnet", "fttransformer"),
+            # ("fttransformer", "fttransformer"),
+        ]:
+            get(
+                "interface.sopt_culture",
+                baseline
+                + [
+                    f"~joint_model(mode='c+o', backbone='{backbone[1]}')",
+                    {
+                        "dopt_params": {
+                            "dynamic_initial_sampling": "models.ops.dynamic_sampling",
+                            "dynamic_initial_sampling_kwargs": {
+                                "samples_per_iteration": 50,
+                                "max_samples": 284,  # n_initial
+                                "stop_condition": False,  # "convergence_condition",
+                                # "convergence_condition": "global_f1 > 0.5",
+                                "mode": "c+o",
+                                "backbone": backbone[0],
+                                "feasibility_solving": True,
+                                "feasibility_targets": "objective constraint",
+                                "verbose": 1,
+                            },
+                            "n_initial": 1,
+                        }
+                    },
+                ],
+            ).launch()
 
     def test_launch(self):
         get(
