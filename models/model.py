@@ -991,7 +991,13 @@ class Model(tf.keras.Model):
             name="steps",
         )
 
-        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        if zero_infeasible:
+            optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+        else:
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+        if verbose > 0:
+            print(f"Starting with input_sample[0]={input_sample.numpy()[0]}")
 
         trace = [X]
         loss_history = []
@@ -1029,6 +1035,7 @@ class Model(tf.keras.Model):
                 elif self.mode == "c":
                     logits_c = prediction
 
+                o = None
                 if "o" in self.mode and "objective" in targets:
                     y_ = tf.constant(self.y_, dtype=tf.float32)
                     o = self.norm_output(logits_o, inverse=True)
@@ -1049,6 +1056,15 @@ class Model(tf.keras.Model):
 
                     prefix = -1 if "-objective" in targets else 1
                     losses.append(prefix * score)
+
+                if "o" in self.mode and "zero" in targets:
+                    if o is not None:
+                        o_pred = o
+                    else:
+                        o_pred = self.norm_output(logits_o, inverse=True)
+                    # add penalty for objectives below zero
+                    penalty = tf.reduce_sum(tf.nn.relu(-o_pred) ** 2)
+                    losses.append(penalty)
 
                 if "c" in self.mode and "constraint" in targets:
                     prefix = -1 if "-constraint" in targets else 1
@@ -1090,7 +1106,9 @@ class Model(tf.keras.Model):
                 ref_norm = norms[0]
                 factors = [ref_norm / (norm + 1e-8) for norm in norms]
                 loss = tf.reduce_sum([w * l for w, l in zip(factors, losses)])
-                grads = tf.reduce_sum([w * l for w, l in zip(factors, derivatives)])
+                grads = tf.reduce_sum(
+                    [w * l for w, l in zip(factors, derivatives)], axis=0
+                )
             elif len(losses) == 1:
                 loss = losses[0]
                 grads = derivatives[0]
@@ -1124,8 +1142,11 @@ class Model(tf.keras.Model):
                         )
                     break
 
-            if zero_infeasible and self.mode != "o":
-                is_feasible = tf.math.reduce_all(logits_c > 0.99, axis=1)
+            if zero_infeasible and o is not None:
+                is_feasible = tf.math.reduce_any(o < 0.0, axis=1)
+
+                # if self.mode != "o":
+                #     is_feasible = tf.math.reduce_all(logits_c > 0.99, axis=1)
 
                 # record number of steps for feasible samples
                 steps = tf.where(is_feasible, steps, iteration)
@@ -1140,13 +1161,22 @@ class Model(tf.keras.Model):
 
             if verbose > 0:
                 try:
+                    if isinstance(prediction, dict):
+                        prediction = prediction["objectives"]
                     preds = np.mean(prediction, axis=0)
                     objs = np.mean(self.norm_output(prediction, inverse=True), axis=0)
                     print(
-                        f"Iteration {iteration}, loss = {loss.numpy()}, logits={preds}, objectives={objs}"
+                        f"Iteration {iteration}, loss = {loss.numpy()}, input_sample={input_sample.numpy()[0]}, grads={grads.numpy()[0]}, logits={preds}, objectives={objs}"
                     )
                 except:
                     pass
+
+            if zero_infeasible and iteration > 0 and np.all(grads.numpy() == 0):
+                if verbose > 0:
+                    print(
+                        f"Gradient zeroed, stopping early after {len(loss_history)} steps."
+                    )
+                break
 
             if isinstance(transform, (list, tuple)):
                 input_sample.assign(apply_bounds(input_sample, transform))
