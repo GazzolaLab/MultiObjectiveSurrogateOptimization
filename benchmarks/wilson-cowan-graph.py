@@ -934,11 +934,12 @@ class WilsonCowanGraph:
         
         return fig, ax
 
-    def plot_spectrograms(self, t, solution, window_size=256, overlap=0.75, 
-                         max_freq=None, figsize=(12, 8)):
+    def analyze_spectrum(self, t, solution, window_size=256, overlap=0.75, 
+                         max_freq=None, figsize=(16, 10), include_magnitude_spectrum=True,
+                         magnitude_window=None, log_scale_magnitude=True):
         """
-        Plot spectrograms of mean activities for each population
-        
+        Plot spectrograms and magnitude spectra of mean activities for each population
+
         Parameters:
         t (array): Time points
         solution (array): Solution array
@@ -946,27 +947,53 @@ class WilsonCowanGraph:
         overlap (float): Fraction of overlap between windows
         max_freq (float): Maximum frequency to plot (Hz)
         figsize (tuple): Figure size
+        include_magnitude_spectrum (bool): Whether to include magnitude spectrum plots
+        magnitude_window (str): Window function for magnitude spectrum ('hann', 'blackman', etc.)
+        log_scale_magnitude (bool): Whether to use log scale for magnitude spectrum
         """
         from scipy import signal
-        
+        from scipy.fft import fft, fftfreq
+
         # Compute sampling rate from time array
         dt = t[1] - t[0]
         fs = 1/dt
-        
+
         n_pops = len(self.populations)
-        fig, axes = plt.subplots(n_pops, 2, figsize=figsize)
-        
-        # Process each population
+
+        if include_magnitude_spectrum:
+            # 3 columns: time series, spectrogram, magnitude spectrum
+            n_cols = 3
+            col_ratios = [1, 1.5, 1]
+        else:
+            # 2 columns: time series, spectrogram
+            n_cols = 2
+            col_ratios = [1, 1.5]
+
+        fig, axes = plt.subplots(n_pops, n_cols, figsize=figsize,
+                                gridspec_kw={'width_ratios': col_ratios})
+
+        if n_pops == 1:
+            axes = axes.reshape(1, -1)
+
         for i, pop in enumerate(self.populations):
             pop_indices = [
                 idx for idx, node in enumerate(self.nodes)
                 if self.G.nodes[node]['population'] == pop
             ]
-            
+
             mean_activity = np.mean(solution[pop_indices], axis=0)
-            
-            # Compute spectrogram
-            f, t_spec, Sxx = signal.spectrogram(
+
+            # 1. Time series plot
+            axes[i, 0].plot(t, mean_activity, label=f'Mean {pop} activity', 
+                           color=f'C{i}', linewidth=1.5)
+            axes[i, 0].set_xlabel('Time (s)')
+            axes[i, 0].set_ylabel('Activity')
+            axes[i, 0].set_title(f'{pop} Population Mean Activity')
+            axes[i, 0].grid(True, alpha=0.3)
+            axes[i, 0].legend()
+
+            # 2. Spectrogram
+            f_spec, t_spec, Sxx = signal.spectrogram(
                 mean_activity,
                 fs=fs,
                 window='hann',
@@ -975,29 +1002,118 @@ class WilsonCowanGraph:
                 detrend='constant',
                 scaling='spectrum'
             )
-            
-            # Mean activity time series
-            axes[i, 0].plot(t, mean_activity, label=f'Mean {pop} activity')
-            axes[i, 0].set_xlabel('Time')
-            axes[i, 0].set_ylabel('Activity')
-            axes[i, 0].set_title(f'{pop} Population Mean Activity')
-            axes[i, 0].grid(True)
-            
+
+            # Apply frequency limit if specified
             if max_freq is not None:
-                freq_mask = f <= max_freq
-                f = f[freq_mask]
-                Sxx = Sxx[freq_mask]
-            
-            # log scale for spectral power
-            im = axes[i, 1].pcolormesh(t_spec, f, 10 * np.log10(Sxx + 1e-10),
-                                       shading='gouraud', cmap='jet')
-            axes[i, 1].set_ylabel('Frequency [Hz]')
-            axes[i, 1].set_xlabel('Time [s]')
+                freq_mask = f_spec <= max_freq
+                f_spec_plot = f_spec[freq_mask]
+                Sxx_plot = Sxx[freq_mask]
+            else:
+                f_spec_plot = f_spec
+                Sxx_plot = Sxx
+
+            # Plot spectrogram (log scale for power)
+            im_spec = axes[i, 1].pcolormesh(t_spec, f_spec_plot, 
+                                           10 * np.log10(Sxx_plot + 1e-12),
+                                           shading='gouraud', cmap='viridis')
+            axes[i, 1].set_ylabel('Frequency (Hz)')
+            axes[i, 1].set_xlabel('Time (s)')
             axes[i, 1].set_title(f'{pop} Population Spectrogram')
-            
-            plt.colorbar(im, ax=axes[i, 1], label='Power/Frequency [dB/Hz]')
-        
+
+            cbar_spec = plt.colorbar(im_spec, ax=axes[i, 1])
+            cbar_spec.set_label('Power/Frequency (dB/Hz)')
+
+            # 3. Magnitude Spectrum (if requested)
+            if include_magnitude_spectrum:
+                if magnitude_window is not None:
+                    if magnitude_window == 'hann':
+                        window_func = signal.windows.hann(len(mean_activity))
+                    elif magnitude_window == 'blackman':
+                        window_func = signal.windows.blackman(len(mean_activity))
+                    elif magnitude_window == 'hamming':
+                        window_func = signal.windows.hamming(len(mean_activity))
+                    elif magnitude_window == 'kaiser':
+                        window_func = signal.windows.kaiser(len(mean_activity), beta=8.6)
+                    else:
+                        window_func = np.ones(len(mean_activity))
+
+                    windowed_activity = mean_activity * window_func
+                    # Normalize by window power to preserve signal power
+                    windowed_activity *= len(mean_activity) / np.sum(window_func)
+                else:
+                    windowed_activity = mean_activity
+
+                # Compute FFT
+                N = len(windowed_activity)
+                fft_vals = fft(windowed_activity)
+                freqs = fftfreq(N, dt)
+
+                # Take positive frequencies only
+                pos_mask = freqs >= 0
+                freqs_pos = freqs[pos_mask]
+                magnitude = np.abs(fft_vals[pos_mask])
+
+                # Apply frequency limit
+                if max_freq is not None:
+                    freq_mask = freqs_pos <= max_freq
+                    freqs_pos = freqs_pos[freq_mask]
+                    magnitude = magnitude[freq_mask]
+
+                # Plot magnitude spectrum
+                if log_scale_magnitude:
+                    axes[i, 2].semilogy(freqs_pos, magnitude, color=f'C{i}', 
+                                       linewidth=1.5)
+                    axes[i, 2].set_ylabel('Magnitude (log scale)')
+                else:
+                    axes[i, 2].plot(freqs_pos, magnitude, color=f'C{i}', 
+                                   linewidth=1.5)
+                    axes[i, 2].set_ylabel('Magnitude')
+
+                axes[i, 2].set_xlabel('Frequency (Hz)')
+                axes[i, 2].set_title(f'{pop} Population Magnitude Spectrum')
+                axes[i, 2].grid(True, alpha=0.3)
+
+                # Find and annotate peak frequencies
+                from scipy.signal import find_peaks
+                peaks, properties = find_peaks(magnitude, 
+                                             height=np.max(magnitude) * 0.1,
+                                             distance=int(len(magnitude) * 0.02))  # Minimum distance between peaks
+
+                if len(peaks) > 0:
+                    # Annotate top 3 peaks
+                    peak_heights = magnitude[peaks]
+                    top_peaks_idx = np.argsort(peak_heights)[-3:][::-1]  # Top 3 peaks
+
+                    for idx in top_peaks_idx:
+                        peak_idx = peaks[idx]
+                        peak_freq = freqs_pos[peak_idx]
+                        peak_mag = magnitude[peak_idx]
+
+                        axes[i, 2].annotate(f'{peak_freq:.1f} Hz', 
+                                           xy=(peak_freq, peak_mag),
+                                           xytext=(10, 10), textcoords='offset points',
+                                           bbox=dict(boxstyle='round,pad=0.3', 
+                                                   facecolor='yellow', alpha=0.7),
+                                           arrowprops=dict(arrowstyle='->', 
+                                                         connectionstyle='arc3,rad=0'))
+
         plt.tight_layout()
+
+        for i, pop in enumerate(self.populations):
+            pop_indices = [
+                idx for idx, node in enumerate(self.nodes)
+                if self.G.nodes[node]['population'] == pop
+            ]
+            mean_activity = np.mean(solution[pop_indices], axis=0)
+
+            mean_val = np.mean(mean_activity)
+            std_val = np.std(mean_activity)
+
+            print(f"\n{pop} Population:")
+            print(f"  Mean activity: {mean_val:.4f} +/- {std_val:.4f}")
+            print(f"  Activity range: [{np.min(mean_activity):.4f}, {np.max(mean_activity):.4f}]")
+
+
         return fig, axes
 
     def compute_nullclines(self, pop1='E', pop2='I', pop1_range=(0, 1), pop2_range=(0, 1), n_points=100, node_indices=None):
@@ -1299,11 +1415,13 @@ if __name__ == "__main__":
     
     model.plot_state(t, solution, time=T)
     plt.show()
-    
-    model.plot_spectrograms(t, solution, 
-                            window_size=1024,   # Smaller window for better time resolution
-                            overlap=0.9,     # 75% overlap between windows
-                            max_freq=100)     # Only show frequencies up to 100 Hz
+
+    model.analyze_spectrum(t, solution, 
+                           window_size=1024,   # Smaller window for better time resolution
+                           overlap=0.9,     # 75% overlap between windows
+                           max_freq=100,    # Only show frequencies up to 100 Hz
+                           magnitude_window = 'hann')     
+
     plt.show()
 
     # Animate
