@@ -1374,7 +1374,7 @@ if __name__ == "__main__":
                              spatial_scale=1.5,
                              gain={'E': 3.0, 'I': 4.0},  # Steeper inhibitory response
 
-                             tau={'E': 0.02, 'I': 0.01},
+                             tau={'E': 0.03, 'I': 0.01},
                              theta={'E': 1.0, 'I': 1.0},)
     
     # Add localized external input
