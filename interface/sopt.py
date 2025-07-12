@@ -95,12 +95,18 @@ class Sopt(Dmosopt):
             else:
                 from models.transformer import Transformer as Model
 
+            if self.custom_training_kwargs is not None:
+                model_options.setdefault(
+                    "mode", self.custom_training_kwargs.get("mode", "c+o")
+                )
+
+            model_options.setdefault('xlb', self.xlb)
+            model_options.setdefault('xub', self.xub)
+
             return Model(
                 self.num_parameters,
                 self.num_constraints,
                 self.num_objectives,
-                xlb=self.xlb,
-                xub=self.xub,
                 **model_options,
             )
 

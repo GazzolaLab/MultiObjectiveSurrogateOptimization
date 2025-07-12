@@ -19,7 +19,17 @@ def feature_dtypes(component):
 def obj_fun(pp, env, targets, t_end):
     env.set_params(pp)
 
-    dt = 0.005  # twice as high as highest frequency (200 Hz)
+    # # input
+    # n_each = 128
+    # center_node = n_each // 2
+    # input_dict = {}
+    # for i in range(n_each):
+    #     dist = min(abs(i - center_node), abs(i - (center_node + n_each)))
+    #     input_dict[f"E{i}"] = 2.0 * np.exp(-dist / 3)
+
+    # env.set_external_input(input_dict)
+
+    dt = 0.001  # twice as high as highest frequency (1000 Hz)
     t, y = env.run(t_end, dt)
 
     data = np.array(y).T
