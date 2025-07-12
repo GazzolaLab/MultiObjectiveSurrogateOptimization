@@ -1356,7 +1356,7 @@ def create_test_graph(n_each=64):
         # I->E connections
         for j in range(-3, 4):  # Wide inhibitory influence
             target = (i + j) % n_each
-            G.add_edge(f'I{i}', f'E{target}', weight=-3.0)
+            G.add_edge(f'I{i}', f'E{target}', weight=-1.0)
     
     return G
 
@@ -1372,10 +1372,10 @@ if __name__ == "__main__":
                              diffusion_populations=['E'],
                              spatial_kernel='gaussian',
                              spatial_scale=1.5,
-                             gain={'E': 2.0, 'I': 3.0},  # Steeper inhibitory response
+                             gain={'E': 3.0, 'I': 4.0},  # Steeper inhibitory response
 
                              tau={'E': 0.02, 'I': 0.01},
-                             theta={'E': 4.0, 'I': 3.0},)
+                             theta={'E': 1.0, 'I': 1.0},)
     
     # Add localized external input
     center_node = n_each // 2
