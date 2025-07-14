@@ -1,5 +1,5 @@
 import numpy as np
-from machinable.utils import save_file
+from machinable.utils import save_file, load_file
 import os
 from dmosopt.MOASMO import xinit
 from pprint import pprint
@@ -494,24 +494,7 @@ def dynamic_sampling(
     )
 
     if tracing:
-        # select samples from each trace
-        rollouts_x = [[] for _ in range(len(x_transformed[0]))]
-        rollouts_y = [[] for _ in range(len(x_transformed[0]))]
-        for batch in x_transformed:
-            y_pred = model.predict(batch)
-            if isinstance(y_pred, dict):
-                y_pred = y_pred["objectives"]
-            for i in range(len(y_pred)):
-                rollouts_x[i].append(batch[i])
-                rollouts_y[i].append(y_pred[i])
-        samples = []
-        for r in range(len(rollouts_y)):
-            _, _, idx = filter_array_by_distance(
-                np.stack(rollouts_y[r]), feasibility_solving
-            )
-            samples.append(np.stack(rollouts_x[r])[idx])
-
-        return np.concatenate(samples)
+        return samples_from_trace(model, x_transformed, feasibility_solving)
 
     if verbose > 0:
         print("Feasibility solving completed ...")
@@ -524,6 +507,25 @@ def dynamic_sampling(
         pprint(candidate_samples[:5] - x_transformed[:5])
 
     return x_transformed
+
+
+def samples_from_trace(model, trace, k):
+    # select samples from each trace
+    rollouts_x = [[] for _ in range(len(trace[0]))]
+    rollouts_y = [[] for _ in range(len(trace[0]))]
+    for batch in trace:
+        y_pred = model.predict(batch)
+        if isinstance(y_pred, dict):
+            y_pred = y_pred["objectives"]
+        for i in range(len(y_pred)):
+            rollouts_x[i].append(batch[i])
+            rollouts_y[i].append(y_pred[i])
+    samples = []
+    for r in range(len(rollouts_y)):
+        _, _, idx = filter_array_by_distance(np.stack(rollouts_y[r]), k)
+        samples.append(np.stack(rollouts_x[r])[idx])
+
+    return np.concatenate(samples)
 
 
 def filter_array_by_distance(
@@ -690,3 +692,18 @@ def import_initial_samples(
         fpath=file_path,
         logger=None,
     )
+
+
+def predefined_sampling(
+    file_path,
+    iteration,
+    evaluated_samples,
+    next_samples,
+    sampler,
+    # ---
+    source,
+):
+    if iteration == 0:
+        return load_file(source)
+
+    save_file(source.replace(".p", ".eval.p"), evaluated_samples)
