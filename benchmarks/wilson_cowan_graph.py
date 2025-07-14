@@ -6,6 +6,7 @@ import networkx as nx
 from collections import defaultdict
 import time
 import warnings
+import json
 from scipy.integrate import solve_ivp
 try:
     from scikits.odes import ode
@@ -14,7 +15,7 @@ except ImportError:
     has_sundials = False
 
 class WilsonCowanGraph:
-    def __init__(self, G, spatial_kernel='exponential', spatial_scale=1.0, 
+    def __init__(self, G, spatial_kernels=None, spatial_scales=None, 
                  dx=1.0, diffusion_strength=1.0, diffusion_populations=None,
                  gain=None, saturation=None, tau=None, theta=None, use_cvode=True):
         """
@@ -25,9 +26,12 @@ class WilsonCowanGraph:
         G (networkx.DiGraph): Graph where:
             - nodes have 'population' attribute indicating population type
             - edges have 'weight' attribute for coupling strength
-        spatial_kernel (str): Type of spatial kernel ('exponential', 'gaussian', None)
-        spatial_scale (float): Spatial scale parameter
+
         dx (float): Spatial discretization
+        spatial_kernels (dict): Spatial kernel for each projection type
+            Example: {('E', 'E'): 'exponential', ('I', 'E'): 'gaussian'}
+        spatial_scales (dict): Spatial scale for each projection type  
+            Example: {('E', 'E'): 2.0, ('I', 'E'): 4.0, ('E', 'I'): 1.0, ('I', 'I'): 0.5}
         diffusion_strength (float): Strength of diffusive coupling
         diffusion_populations (list): Populations that have diffusive coupling
         tau (dict): Time constants for each population type
@@ -37,8 +41,6 @@ class WilsonCowanGraph:
         use_cvode (bool): Whether to use CVODE (requires scikits.odes)
         """
         self.G = G.copy()
-        self.spatial_kernel = spatial_kernel
-        self.spatial_scale = spatial_scale
         self.dx = dx
         self.diffusion_strength = diffusion_strength
         self.diffusion_populations = [] if diffusion_populations is None else diffusion_populations
@@ -66,6 +68,9 @@ class WilsonCowanGraph:
         self.theta = theta if theta is not None else {pop: 4.0 for pop in self.populations}
         self.gain = gain if gain is not None else {pop: 1.0 for pop in self.populations}
         self.saturation = saturation if saturation is not None else {pop: 1.0 for pop in self.populations}
+        
+        self.spatial_kernels = self._setup_spatial_kernels(spatial_kernels)
+        self.spatial_scales = self._setup_spatial_scales(spatial_scales)
         
         # Create parameter arrays for vectorized operations
         self._create_parameter_arrays()
@@ -113,10 +118,50 @@ class WilsonCowanGraph:
                 i for i, node in enumerate(self.nodes)
                 if self.G.nodes[node]['population'] == pop
             ])
+            
+    def _setup_spatial_kernels(self, spatial_kernels):
+        """Set up projection-specific spatial kernels"""
+        # Fill in missing entries with defaults
+        if spatial_kernels is None:
+            spatial_kernels = {}
+        updated_kernels = {}
+        for source_pop in self.populations:
+            for target_pop in self.populations:
+                if (source_pop, target_pop) not in spatial_kernels:
+                    updated_kernels[(source_pop, target_pop)] = 'exponential'
+                else:
+                    updated_kernels[(source_pop, target_pop)] = spatial_kernels[(source_pop, target_pop)]
+                    
+        return updated_kernels
     
-    def _spatial_weight(self, pos1, pos2):
-        """Compute spatial weighting between two positions"""
-        if self.spatial_kernel is None:
+    def _setup_spatial_scales(self, spatial_scales):
+        """Set up projection-specific spatial scales"""
+        # Fill in missing entries with defaults
+        if spatial_scales is None:
+            spatial_scales = {}
+        updated_scales = {}
+        for source_pop in self.populations:
+            for target_pop in self.populations:
+                if (source_pop, target_pop) not in spatial_scales:
+                    updated_scales[(source_pop, target_pop)] = 1.0
+                else:
+                    updated_scales[(source_pop, target_pop)] = spatial_scales[(source_pop, target_pop)]
+                    
+        return updated_scales
+    
+
+    def _spatial_weight(self, pos1, pos2, projection_type):
+        """
+        Compute spatial weighting for a specific projection type
+        
+        Parameters:
+        pos1, pos2: Source and target positions
+        projection_type: Tuple (source_pop, target_pop)
+        """
+        kernel = self.spatial_kernels[projection_type]
+        scale = self.spatial_scales[projection_type]
+        
+        if kernel is None or kernel == 'none':
             return 1.0
             
         if np.isscalar(pos1):
@@ -124,12 +169,22 @@ class WilsonCowanGraph:
         else:
             distance = np.sqrt(sum((p1 - p2) ** 2 for p1, p2 in zip(pos1, pos2)))
         
-        if self.spatial_kernel == 'exponential':
-            return np.exp(-distance / self.spatial_scale)
-        elif self.spatial_kernel == 'gaussian':
-            return np.exp(-(distance / self.spatial_scale) ** 2)
+        if kernel == 'exponential':
+            return np.exp(-distance / scale)
+        elif kernel == 'gaussian':
+            return np.exp(-(distance / scale) ** 2)
+        elif kernel == 'center_surround':
+            # Center-surround profile (excitation in center, inhibition in surround)
+            center = np.exp(-(distance / scale) ** 2)
+            surround = 0.5 * np.exp(-(distance / (2 * scale)) ** 2)
+            return center - surround
+        elif kernel == 'linear_decay':
+            return max(0, 1 - distance / scale)
+        elif kernel == 'step':
+            return 1.0 if distance <= scale else 0.0
         else:
-            raise ValueError(f"Unknown spatial kernel: {self.spatial_kernel}")
+            raise ValueError(f"Unknown spatial kernel: {kernel}")
+
     
     def _compute_coupling_matrices(self):
         """Compute coupling matrices for all population interactions"""
@@ -147,6 +202,7 @@ class WilsonCowanGraph:
             
             source_pop = self.G.nodes[source]['population']
             target_pop = self.G.nodes[target]['population']
+            projection_type = (source_pop, target_pop)
             
             source_idx = self.node_to_idx[source]
             target_idx = self.node_to_idx[target]
@@ -156,10 +212,11 @@ class WilsonCowanGraph:
             target_pos = np.array(self.G.nodes[target]['pos'])
             
             # Compute spatial weight
-            spatial_factor = self._spatial_weight(source_pos, target_pos)
+            spatial_factor = self._spatial_weight(source_pos, target_pos, projection_type)
             
             matrices[(source_pop, target_pop)][target_idx, source_idx] = base_weight * spatial_factor
-        
+
+            print(f"[{target_idx}, {source_idx}] base_weight = {base_weight} spatial_factor = {spatial_factor}")
         return matrices
     
     def _compute_laplacians(self):
@@ -559,7 +616,53 @@ class WilsonCowanGraph:
         }
         
         return results
-    
+        
+    def plot_spatial_kernels(self, max_distance=10, figsize=(15, 10)):
+        """
+        Visualize the spatial kernels for all projection types
+        """
+        distances = np.linspace(0, max_distance, 200)
+        
+        n_projections = len(self.spatial_kernels)
+        n_cols = min(4, n_projections)
+        n_rows = (n_projections + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        if n_rows == 1:
+            axes = axes.reshape(1, -1)
+        
+        projection_types = list(self.spatial_kernels.keys())
+        
+        for i, proj_type in enumerate(projection_types):
+            row = i // n_cols
+            col = i % n_cols
+            ax = axes[row, col]
+            
+            # Compute spatial weights for this projection type
+            weights = [self._spatial_weight(0, d, proj_type) for d in distances]
+            
+            # Plot
+            source_pop, target_pop = proj_type
+            color = 'blue' if source_pop == 'E' else 'red'
+            linestyle = '-' if target_pop == 'E' else '--'
+            
+            ax.plot(distances, weights, color=color, linestyle=linestyle, linewidth=2)
+            ax.set_title(f'{source_pop} → {target_pop}\n'
+                        f'Kernel: {self.spatial_kernels[proj_type]}\n'
+                        f'Scale: {self.spatial_scales[proj_type]:.1f}')
+            ax.set_xlabel('Distance')
+            ax.set_ylabel('Connection Strength')
+            ax.grid(True, alpha=0.3)
+            ax.set_ylim(-0.2, 1.1)
+        
+        for i in range(n_projections, n_rows * n_cols):
+            row = i // n_cols
+            col = i % n_cols
+            axes[row, col].set_visible(False)
+        
+        plt.tight_layout()
+        return fig, axes
+
     def plot_eigenvalue_spectrum(self, equilibrium=None, figsize=(10, 6)):
         """Plot eigenvalue spectrum of the Jacobian"""
         stability_results = self.analyze_stability(equilibrium)
@@ -960,10 +1063,11 @@ class WilsonCowanGraph:
 
         n_pops = len(self.populations)
 
+        # Determine subplot configuration
         if include_magnitude_spectrum:
             # 3 columns: time series, spectrogram, magnitude spectrum
             n_cols = 3
-            col_ratios = [1, 1.5, 1]
+            col_ratios = [1, 1.5, 1]  # Make spectrogram column wider
         else:
             # 2 columns: time series, spectrogram
             n_cols = 2
@@ -972,9 +1076,11 @@ class WilsonCowanGraph:
         fig, axes = plt.subplots(n_pops, n_cols, figsize=figsize,
                                 gridspec_kw={'width_ratios': col_ratios})
 
+        # Handle single population case
         if n_pops == 1:
             axes = axes.reshape(1, -1)
 
+        # Process each population
         for i, pop in enumerate(self.populations):
             pop_indices = [
                 idx for idx, node in enumerate(self.nodes)
@@ -1020,11 +1126,13 @@ class WilsonCowanGraph:
             axes[i, 1].set_xlabel('Time (s)')
             axes[i, 1].set_title(f'{pop} Population Spectrogram')
 
+            # Add colorbar for spectrogram
             cbar_spec = plt.colorbar(im_spec, ax=axes[i, 1])
             cbar_spec.set_label('Power/Frequency (dB/Hz)')
 
             # 3. Magnitude Spectrum (if requested)
             if include_magnitude_spectrum:
+                # Apply window function if specified
                 if magnitude_window is not None:
                     if magnitude_window == 'hann':
                         window_func = signal.windows.hann(len(mean_activity))
@@ -1053,7 +1161,7 @@ class WilsonCowanGraph:
                 freqs_pos = freqs[pos_mask]
                 magnitude = np.abs(fft_vals[pos_mask])
 
-                # Apply frequency limit
+                # Apply frequency limit if specified
                 if max_freq is not None:
                     freq_mask = freqs_pos <= max_freq
                     freqs_pos = freqs_pos[freq_mask]
@@ -1115,6 +1223,7 @@ class WilsonCowanGraph:
 
 
         return fig, axes
+    
 
     def compute_nullclines(self, pop1='E', pop2='I', pop1_range=(0, 1), pop2_range=(0, 1), n_points=100, node_indices=None):
         """
@@ -1322,8 +1431,8 @@ class WilsonCowanGraph:
 
 
 # Example usage
-def create_test_graph(n_each=64):
-    """Create a test network"""
+def create_EI_graph(n_each=64):
+    """Create an E-I recurrent network"""
     G = nx.DiGraph()
     
     # Add nodes for both populations in a ring topology
@@ -1346,7 +1455,7 @@ def create_test_graph(n_each=64):
         
         # I-I connections (recurrent inhibition)
         G.add_edge(f'I{i}', f'I{(i+1)%n_each}', weight=-1.0)
-        G.add_edge(f'I{i}', f'I{(i-1)%n_each}', weight=-1.0)
+        G.add_edge(f'I{i}', f'I{(i-1)%n_each}', weight=-0.9)
         
         # E->I connections
         G.add_edge(f'E{i}', f'I{i}', weight=4.0)
@@ -1356,8 +1465,41 @@ def create_test_graph(n_each=64):
         # I->E connections
         for j in range(-3, 4):  # Wide inhibitory influence
             target = (i + j) % n_each
-            G.add_edge(f'I{i}', f'E{target}', weight=-1.0)
+            G.add_edge(f'I{i}', f'E{target}', weight=-1.1)
     
+    return G
+
+def create_MEA_graph(params, MEA_config_path):
+    system = json.load(open(MEA_config_path))
+
+    G = nx.DiGraph()
+
+    for i, (x, y) in enumerate(system["electrodes"]):
+        G.add_node(f"E{i}", population="E", pos=np.array([x, y]) / 1000)
+        G.add_node(f"I{i}", population="I", pos=np.array([x, y]) / 1000)
+
+    N = len(system["electrodes"])
+    for i in range(N):
+        # E-E connections (recurrent excitation)
+        G.add_edge(f"E{i}", f"E{(i + 1) % N}", weight=params.get("E_E_weight", 0.0))
+
+        # I-I connections (recurrent inhibition)
+        G.add_edge(f"I{i}", f"I{(i + 1) % N}", weight=-params.get("I_I_weight", 0.0))
+        G.add_edge(f"I{i}", f"I{(i - 1) % N}", weight=-params.get("I_I_weight", 0.0))
+
+        # E->I connections
+        G.add_edge(f"E{i}", f"I{i}", weight=params.get("E_I_weight", 1.0))
+        G.add_edge(f"E{i}", f"I{(i + 1) % N}", weight=params.get("E_I_weight", 1.0))
+        G.add_edge(f"E{i}", f"I{(i - 1) % N}", weight=params.get("E_I_weight", 1.0))
+
+        # I->E connections, wider inhibition
+        for j in range(-3, 4):
+            G.add_edge(
+                f"I{i}",
+                f"E{(i + j) % N}",
+                weight=-params.get("I_E_weight", 1.0),
+            )
+
     return G
 
 
@@ -1365,25 +1507,40 @@ def create_test_graph(n_each=64):
 if __name__ == "__main__":
     # Create model
     n_each = 128
-    G = create_test_graph(n_each=n_each)
-    
+    G = create_EI_graph(n_each=n_each)
+    #G = create_MEA_graph(
+    #    {"E_E_weight": 10, "I_I_weight": 1.0, "E_I_weight": 4.0, "I_E_weight": 1.0},
+    #    "MEA.json"
+    #)
     model = WilsonCowanGraph(G, dx=0.5,
                              diffusion_strength=1.0,
                              diffusion_populations=['E'],
-                             spatial_kernel='gaussian',
-                             spatial_scale=1.5,
-                             gain={'E': 3.0, 'I': 4.0},  # Steeper inhibitory response
-
+                             spatial_kernels = {
+                                 ('E', 'E'): 'exponential',    
+                                 ('I', 'E'): 'gaussian',       
+                                 ('E', 'I'): 'exponential',    
+                                 ('I', 'I'): 'gaussian'     
+                             },
+                             spatial_scales = {
+                                 ('E', 'E'): 1.0,   
+                                 ('I', 'E'): 0.5,   
+                                 ('E', 'I'): 1.0,   
+                                 ('I', 'I'): 0.8
+                             },
+                             gain={'E': 3.0, 'I': 4.0}, 
                              tau={'E': 0.03, 'I': 0.01},
                              theta={'E': 1.0, 'I': 1.0},)
     
     # Add localized external input
     center_node = n_each // 2
+    left_node = n_each // 4
     input_dict = {}
     for i in range(n_each):
-        dist = min(abs(i - center_node), abs(i - (center_node + n_each)))  # Account for periodic boundary
-        input_dict[f'E{i}'] = 2.0 * np.exp(-dist/3)
-    
+        center_dist = min(abs(i - center_node), abs(i - (center_node + n_each)))  # Account for periodic boundary
+        left_dist = min(abs(i - left_node), abs(i - (left_node + n_each)))  # Account for periodic boundary
+        input_dict[f'E{i}'] = 2.0 * np.exp(-center_dist/3)
+        input_dict[f'I{i}'] = 0.3 * np.exp(-center_dist/2)
+
     model.set_external_input(input_dict)
 
     test_state = 0.1 * np.random.rand(model.n_nodes)
@@ -1421,7 +1578,6 @@ if __name__ == "__main__":
                            overlap=0.9,     # 75% overlap between windows
                            max_freq=100,    # Only show frequencies up to 100 Hz
                            magnitude_window = 'hann')     
-
     plt.show()
 
     # Animate
