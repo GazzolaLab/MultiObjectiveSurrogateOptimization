@@ -100,8 +100,8 @@ class Sopt(Dmosopt):
                     "mode", self.custom_training_kwargs.get("mode", "c+o")
                 )
 
-            model_options.setdefault('xlb', self.xlb)
-            model_options.setdefault('xub', self.xub)
+            model_options.setdefault("xlb", self.xlb)
+            model_options.setdefault("xub", self.xub)
 
             return Model(
                 self.num_parameters,
@@ -171,5 +171,15 @@ class Sopt(Dmosopt):
             "dopt_params": {
                 "dynamic_initial_sampling": "models.ops.dynamic_sampling",
                 "dynamic_initial_sampling_kwargs": kwargs,
+            }
+        }
+
+    def version_predefined(self, source):
+        return {
+            "dopt_params": {
+                "dynamic_initial_sampling": "models.ops.predefined_sampling",
+                "dynamic_initial_sampling_kwargs": {"source": source},
+                "n_epochs": 0,
+                "n_initial": 0,
             }
         }

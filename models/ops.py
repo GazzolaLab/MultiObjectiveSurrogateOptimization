@@ -1,9 +1,10 @@
 import numpy as np
-from machinable.utils import save_file
+from machinable.utils import save_file, load_file
 import os
 from dmosopt.MOASMO import xinit
 from pprint import pprint
 from models.opt import Opt
+from scipy.spatial.distance import pdist, squareform
 
 
 def joint(
@@ -283,7 +284,8 @@ def dynamic_sampling(
     - feasibility_solving=False
         If True, the gradient information of the model will be used to push samples
         towards feasibility. This can be activated conditionally using a string,
-        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4
+        e.g. `'f1>0.4'` to only solve if the models F1 score is greater than 0.4.
+        If integer, optimization trace will be used to obtain samples.
     - feasibility_max_iterations=1000
         Only applies if feasibility_solving is True; number of iterations
     - feasibility_targets='objective distance'
@@ -479,6 +481,8 @@ def dynamic_sampling(
     if feasibility_solving is False:
         return candidate_samples
 
+    tracing = isinstance(feasibility_solving, int) and feasibility_solving > 1
+
     # feasibiliy solving
     x_transformed, _ = model.make_feasible(
         candidate_samples,
@@ -486,7 +490,11 @@ def dynamic_sampling(
         max_iterations=feasibility_max_iterations,
         max_steps_filter=feasibility_max_steps_filter,
         targets=feasibility_targets,
+        return_trace=tracing,
     )
+
+    if tracing:
+        return samples_from_trace(model, x_transformed, feasibility_solving)
 
     if verbose > 0:
         print("Feasibility solving completed ...")
@@ -499,6 +507,97 @@ def dynamic_sampling(
         pprint(candidate_samples[:5] - x_transformed[:5])
 
     return x_transformed
+
+
+def samples_from_trace(model, trace, k):
+    # select samples from each trace
+    rollouts_x = [[] for _ in range(len(trace[0]))]
+    rollouts_y = [[] for _ in range(len(trace[0]))]
+    for batch in trace:
+        y_pred = model.predict(batch)
+        if isinstance(y_pred, dict):
+            y_pred = y_pred["objectives"]
+        for i in range(len(y_pred)):
+            rollouts_x[i].append(batch[i])
+            rollouts_y[i].append(y_pred[i])
+    samples = []
+    for r in range(len(rollouts_y)):
+        _, _, idx = filter_array_by_distance(np.stack(rollouts_y[r]), k)
+        samples.append(np.stack(rollouts_x[r])[idx])
+
+    return np.concatenate(samples)
+
+
+def filter_array_by_distance(
+    arr, k, normalize_method="minmax", distance_metric="euclidean"
+):
+    """
+    Filter array by iteratively removing rows with closest distance to other rows.
+
+    # Arguments
+
+    - arr Input array of shape [N, columns]
+    - k Target number of rows (k < N)
+    - normalize_method='minmax' Normalization method: 'minmax', 'zscore', or 'robust'
+    - distance_metric='euclidean' Distance metric for scipy.spatial.distance
+
+    # Returns
+
+    - filtered_arr Filtered array of shape [k, columns] with original values
+    - removed_indices List of original indices that were removed
+    - kept_indices List of original indices that were kept
+    """
+
+    if k >= arr.shape[0]:
+        raise ValueError("k must be less than the number of rows in the array")
+
+    original_arr = arr.copy()
+    original_indices = np.arange(arr.shape[0])
+    removed_indices = []
+
+    normalized_arr = normalize_array(arr, normalize_method)
+
+    while normalized_arr.shape[0] > k:
+        distances = pdist(normalized_arr, metric=distance_metric)
+        distance_matrix = squareform(distances)
+
+        np.fill_diagonal(distance_matrix, np.inf)
+        min_distances = distance_matrix.min(axis=1)
+        row_to_remove = np.argmin(min_distances)
+
+        removed_indices.append(original_indices[row_to_remove])
+        normalized_arr = np.delete(normalized_arr, row_to_remove, axis=0)
+        original_indices = np.delete(original_indices, row_to_remove)
+
+    kept_indices = original_indices.tolist()
+    filtered_arr = original_arr[kept_indices]
+
+    return filtered_arr, removed_indices, kept_indices
+
+
+def normalize_array(arr, method):
+    if method == "minmax":
+        min_vals = arr.min(axis=0)
+        max_vals = arr.max(axis=0)
+        range_vals = max_vals - min_vals
+        range_vals[range_vals == 0] = 1
+        return (arr - min_vals) / range_vals
+
+    if method == "zscore":
+        mean_vals = arr.mean(axis=0)
+        std_vals = arr.std(axis=0)
+        std_vals[std_vals == 0] = 1
+        return (arr - mean_vals) / std_vals
+
+    if method == "robust":
+        median_vals = np.median(arr, axis=0)
+        q75 = np.percentile(arr, 75, axis=0)
+        q25 = np.percentile(arr, 25, axis=0)
+        iqr = q75 - q25
+        iqr[iqr == 0] = 1
+        return (arr - median_vals) / iqr
+
+    raise ValueError("method must be 'minmax', 'zscore', or 'robust'")
 
 
 def import_initial_samples(
@@ -593,3 +692,18 @@ def import_initial_samples(
         fpath=file_path,
         logger=None,
     )
+
+
+def predefined_sampling(
+    file_path,
+    iteration,
+    evaluated_samples,
+    next_samples,
+    sampler,
+    # ---
+    source,
+):
+    if iteration == 0:
+        return load_file(source)
+
+    save_file(source.replace(".p", ".eval.p"), evaluated_samples)
