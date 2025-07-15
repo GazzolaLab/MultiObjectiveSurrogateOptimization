@@ -44,7 +44,6 @@ class SoptWc(Sopt):
                 ],
                 "feature_dtypes": "benchmarks.cortical_culture.e_i_system.feature_dtypes",
                 "space": {
-                    "distance_scale": [0, 10],
                     "E_E_weight": [0.0, 25.0],
                     "E_I_weight": [0.0, 25.0],
                     "I_E_weight": [0.0, 25.0],
@@ -56,6 +55,10 @@ class SoptWc(Sopt):
                     "I_tau": [0.0, 0.1],
                     "E_gain": [0.0, 5.0],
                     "I_gain": [0.0, 5.0],
+                    "E_E_scale": [0.0, 5.0],
+                    "I_E_scale": [0.0, 5.0],
+                    "E_I_scale": [0.0, 5.0],
+                    "I_I_scale": [0.0, 5.0],
                 },
                 "problem_parameters": {},
             }
