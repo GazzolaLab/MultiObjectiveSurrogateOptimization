@@ -23,10 +23,13 @@ while True:
 
     x, y, yC, epochs = task["x"], task["y"], task["yC"], task["epochs"]
 
-    model.autofit(x, y, yC, verbose=1, epochs=501.0)
-    scores = model.autoeval(x, y, yC)
+    if epochs == "request":
+        scores = model.autoepoch(x, y, yC, verbose=0)
+    else:
+        model.autofit(x, y, yC, verbose=1, epochs=epochs)
+        scores = model.autoeval(x, y, yC)
 
-    model.save_weights(os.path.join(queue, f"current.weights.h5"))
+        model.save_weights(os.path.join(queue, f"current.weights.h5"))
 
     print(f"Tasks {i} finished, sending data")
 

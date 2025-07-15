@@ -277,6 +277,7 @@ def dynamic_sampling(
     feasibility_targets="objective distance",
     feasibility_max_steps_filter=None,
     verbose=1,
+    queue=None,
     # ---
     _history=[],
 ):
@@ -362,25 +363,32 @@ def dynamic_sampling(
                 print(f"Using o-mode (overriding {mode}-mode)", flush=True)
             mode = "o"
 
-    if backbone == "resnet":
-        from models.resnet import Resnet as Backbone
-    elif backbone == "transformer":
-        from models.transformer import Transformer as Backbone
-    elif backbone == "fttransformer":
-        from models.fttransformer import FTTransformer as Backbone
-    else:
-        raise ValueError(f"Invalid backbone: {backbone}")
-
-    model = Backbone(
-        num_parameters=x_completed.shape[1],
-        num_constraints=c_completed.shape[1],
-        num_objectives=y_completed.shape[1],
-        mode=mode.replace("!", ""),
-        xlb=sampler["xlb"],
-        xub=sampler["xub"],
+    model = Model.unserialize(
+        dict(
+            cls=backbone,
+            num_parameters=x_completed.shape[1],
+            num_constraints=c_completed.shape[1],
+            num_objectives=y_completed.shape[1],
+            mode=mode.replace("!", ""),
+            xlb=sampler["xlb"],
+            xub=sampler["xub"],
+        )
     )
 
-    autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=0)
+    if queue is not None:
+        # checkpoint and yield
+        autoepochs = SwapQueue(queue).send(
+            {
+                "backbone": model.serialize(),
+                "x": x_completed,
+                "y": y_completed,
+                "yC": c_completed,
+                "epochs": "request",
+            }
+        )
+    else:
+        # process eagerly
+        autoepochs = model.autoepoch(x_completed, y_completed, c_completed, verbose=0)
 
     if min(autoepochs) < 5:
         if verbose > 0:
@@ -390,16 +398,39 @@ def dynamic_sampling(
             )
         return next_samples
 
-    model.autofit(
-        x_completed,
-        y_completed,
-        c_completed,
-        verbose=0,
-        epochs=np.mean(autoepochs),
-    )
+    if queue is not None:
+        # checkpoint and yield
+        scores = SwapQueue(queue).send(
+            {
+                "backbone": model.serialize(),
+                "x": x_completed,
+                "y": y_completed,
+                "yC": c_completed,
+                "epochs": np.mean(autoepochs),
+            }
+        )
 
-    # gather stats
-    scores = model.autoeval(x_completed, y_completed, c_completed)
+        model.build()
+        model.load_weights(os.path.join(queue, f"current.weights.h5"))
+        model.X_raw_, model.y_raw_, model.yC_raw_ = (
+            x_completed,
+            y_completed,
+            c_completed,
+        )
+        model.X_, model.y_, model.yC_ = model.preprocess(
+            x_completed, y_completed, c_completed
+        )
+    else:
+        model.autofit(
+            x_completed,
+            y_completed,
+            c_completed,
+            verbose=0,
+            epochs=np.mean(autoepochs),
+        )
+
+        # gather stats
+        scores = model.autoeval(x_completed, y_completed, c_completed)
 
     scores.setdefault("accuracy", -1)
     scores.setdefault("precision", -1)
