@@ -248,6 +248,31 @@ class Model(tf.keras.Model):
 
         self._last_fit_epochs = -1
 
+    def serialize(self):
+        return {
+            "cls": self.__class__.__name__,
+            "num_parameters": self.num_parameters,
+            "num_constraints": self.num_constraints,
+            "num_objectives": self.num_objectives,
+            "mode": self.mode,
+            "xlb": self.xlb,
+            "xub": self.xub,
+        }
+
+    @classmethod
+    def unserialize(cls, serialized):
+        backbone = serialized.pop("cls").lower()
+        if backbone == "resnet":
+            from models.resnet import Resnet as Backbone
+        elif backbone == "transformer":
+            from models.transformer import Transformer as Backbone
+        elif backbone == "fttransformer":
+            from models.fttransformer import FTTransformer as Backbone
+        else:
+            raise ValueError(f"Invalid backbone: {backbone}")
+
+        return Backbone(**serialized)
+
     def objective_loss(self, y_true, y_pred, alpha=1, beta=0.01, verbose=False):
         mins = tf.reduce_min(self.y_norm_, axis=0)
         maxs = tf.reduce_max(self.y_norm_, axis=0)

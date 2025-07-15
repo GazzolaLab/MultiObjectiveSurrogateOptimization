@@ -4,6 +4,8 @@ import os
 from dmosopt.MOASMO import xinit
 from pprint import pprint
 from models.opt import Opt
+from models.model import Model
+from models.utils import SwapQueue
 from scipy.spatial.distance import pdist, squareform
 
 
@@ -27,6 +29,7 @@ def joint(
     feasibility_targets="objective",
     save_weights=True,
     epochs="auto",
+    queue=None,
     iterations=[],
 ):
     """
@@ -119,29 +122,41 @@ def joint(
         def __getattr__(self, name):
             return getattr(self._wrapped, name)
 
-    if backbone == "resnet":
-        from models.resnet import Resnet as Backbone
-    elif backbone == "transformer":
-        from models.transformer import Transformer as Backbone
-    elif backbone == "fttransformer":
-        from models.fttransformer import FTTransformer as Backbone
-    else:
-        raise ValueError(f"Invalid backbone: {backbone}")
-
     model = _Model(
-        Backbone(
-            num_parameters=Xinit.shape[1],
-            num_constraints=C.shape[1] if C is not None else 0,
-            num_objectives=Yinit.shape[1],
-            mode=mode,
-            xlb=xlb,
-            xub=xub,
+        Model.unserialize(
+            dict(
+                cls=backbone,
+                num_parameters=Xinit.shape[1],
+                num_constraints=C.shape[1] if C is not None else 0,
+                num_objectives=Yinit.shape[1],
+                mode=mode,
+                xlb=xlb,
+                xub=xub,
+            )
         )
     )
 
-    model.autofit(x, y, yC, verbose=1, epochs=epochs)
+    if queue is not None:
+        # checkpoint and yield
+        scores = SwapQueue(queue).send(
+            {
+                "backbone": model._wrapped.serialize(),
+                "x": x,
+                "y": y,
+                "yC": yC,
+                "epochs": epochs,
+            }
+        )
 
-    scores = model.autoeval(x, y, yC)
+        model.build()
+        model.load_weights(os.path.join(queue, f"current.weights.h5"))
+        model.X_raw_, model.y_raw_, model.yC_raw_ = x, y, C
+        model.X_, model.y_, model.yC_ = model.preprocess(x, y, C)
+    else:
+        # process eagerly
+        model.autofit(x, y, yC, verbose=1, epochs=epochs)
+
+        scores = model.autoeval(x, y, yC)
 
     scores["num_samples"] = x.shape[0]
     scores["iteration"] = len(iterations)

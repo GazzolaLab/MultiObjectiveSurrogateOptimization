@@ -2,8 +2,43 @@ import numpy as np
 from matplotlib.colors import LogNorm
 from matplotlib import pyplot as plt
 from sklearn.utils import resample
-import math
+import os
 from scipy import stats
+from machinable.utils import save_file, load_file
+import time
+
+
+class SwapQueue:
+    def __init__(self, directory):
+        self.directory = directory
+
+    def put(self, key, data):
+        save_file([self.directory, f"{key}.p"], data)
+
+    def get(self, key):
+        while True:
+            payload = load_file([self.directory, f"{key}.p"], None)
+            if payload is not None:
+                return payload
+            time.sleep(5)
+
+    def send(self, data):
+        self.put("send", data)
+        payload = self.get("receive")
+        self.done("receive")
+        return payload
+
+    def receive(self, data=None):
+        if data is None:
+            return self.get("send")
+
+        self.put("receive", data)
+        self.done("send")
+
+    def done(self, key):
+        file_path = os.path.join(self.directory, f"{key}.p")
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
 def preprocess(x, y, yC=None, remove_outliers=False, nan="remove"):
@@ -90,7 +125,7 @@ def convert_to_k(number):
 
 def constraint_map(constraints, resolution=10):
     import seaborn as sns
-    
+
     q = (constraints.to_numpy() > 0).astype(int)
     # append global
     q = np.concatenate((q, q.all(axis=1).astype(int).reshape(-1, 1)), axis=1)
