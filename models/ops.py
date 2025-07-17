@@ -486,13 +486,13 @@ def dynamic_sampling(
     if optimizer_sampling is not None:
         # include optimizer suggested samples
         from dmosopt.NSGA2 import NSGA2
-        from dmosopt.model import Model
+        from dmosopt.model import Model as BaseModel
 
         optimizer = NSGA2(
             popsize=_history[0]["num_samples"] // x_completed.shape[1],
             nInput=x_completed.shape[1],
             nOutput=y_completed.shape[1],
-            model=Model(),
+            model=BaseModel(),
             distance_metric=None,
         )
         local_random = np.random.default_rng()
