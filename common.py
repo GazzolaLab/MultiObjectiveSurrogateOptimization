@@ -14,6 +14,8 @@ plt.rcParams.update({"figure.dpi": "300"})
 
 np.set_printoptions(linewidth=np.inf, suppress=True)
 
+FIGURE_EXPORT_DIRECTORY = os.environ.get("FIGURES_MSO", "./figures")
+
 
 colors = {
     "blue": "#0C5DA5",
@@ -40,16 +42,6 @@ mcolors = {
         ]
     )
 }
-
-
-def Figure():
-    import pylustrator
-    from matplotlib import _pylab_helpers
-
-    pylustrator.start()
-
-    # allow cross-cell figure collection
-    _pylab_helpers.Gcf.destroy_all = lambda *args: ...
 
 
 def fronts_nadir(components, **kwargs):
@@ -107,9 +99,15 @@ def globus_download(interface, force=False):
 
 def stash(key: str, data):
     if hasattr(data, "savefig"):
-        data.savefig(f"./figures/{key}.svg", transparent=True)
-        data.savefig(f"./figures/{key}.png", transparent=True)
-        data.savefig(f"./figures/{key}.pdf", transparent=True)
+        data.savefig(
+            os.path.join(FIGURE_EXPORT_DIRECTORY, f"{key}.svg"), transparent=True
+        )
+        data.savefig(
+            os.path.join(FIGURE_EXPORT_DIRECTORY, f"{key}.png"), transparent=True
+        )
+        data.savefig(
+            os.path.join(FIGURE_EXPORT_DIRECTORY, f"{key}.pdf"), transparent=True
+        )
         return
 
     if "." not in key:

@@ -10,6 +10,8 @@ index/
 *.GDS
 *.gds
 *.p
+!figures/data/figure4-sopt-grad-traces.p
+!figures/data/figure4-support-benchmark.p
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
