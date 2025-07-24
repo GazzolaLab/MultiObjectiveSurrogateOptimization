@@ -216,7 +216,7 @@ class WilsonCowanGraph:
             
             matrices[(source_pop, target_pop)][target_idx, source_idx] = base_weight * spatial_factor
 
-            print(f"[{target_idx}, {source_idx}] base_weight = {base_weight} spatial_factor = {spatial_factor}")
+            #print(f"[{target_idx}, {source_idx}] base_weight = {base_weight} spatial_factor = {spatial_factor}")
         return matrices
     
     def _compute_laplacians(self):

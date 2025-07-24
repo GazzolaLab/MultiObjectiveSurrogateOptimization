@@ -60,4 +60,20 @@ class _Ca1Inference(Interface):
                 get(
                     "interface.sopt_inference",
                     version,
-                ).launch()
+                ).launch().save_attribute("model_name", f"{nm}-{model}")
+
+    def models(self):
+        models = []
+        for c in self.components:
+            models.append(c.load_attribute("model_name"))
+        return models
+
+    def export(self):
+        for c in self.components:
+            print(
+                "cp "
+                + c.local_directory("results.p")
+                + " ./export/"
+                + c.load_attribute("model_name")
+                + ".p"
+            )
