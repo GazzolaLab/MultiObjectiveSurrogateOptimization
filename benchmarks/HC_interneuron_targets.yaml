@@ -1,0 +1,57 @@
+PV+:
+  CA1:
+    bin_size: 50.0
+    mean_firing_rate_target: 17.598906727929187
+    mean_fraction_active_per_bin: 0.9228727770177837
+    std_firing_rate_target: 11.615413458684506
+    std_fraction_active_per_bin: 0.22522861523699397
+  CA3:
+    bin_size: 50.0
+    mean_firing_rate_target: 19.495367158123226
+    mean_fraction_active_per_bin: 0.9299418604651161
+    std_firing_rate_target: 10.692389460616367
+    std_fraction_active_per_bin: 0.21896603034542214
+  DG:
+    bin_size: 50.0
+    mean_firing_rate_target: 15.786256287554801
+    mean_fraction_active_per_bin: 0.9144824112165224
+    std_firing_rate_target: 9.228251721218442
+    std_fraction_active_per_bin: 0.23607652666841428
+SST+:
+  CA1:
+    bin_size: 50.0
+    mean_firing_rate_target: 12.56504477206897
+    mean_fraction_active_per_bin: 0.978076379066478
+    std_firing_rate_target: 7.801321376710226
+    std_fraction_active_per_bin: 0.11630935760175556
+  CA3:
+    bin_size: 50.0
+    mean_firing_rate_target: 19.319167130436256
+    mean_fraction_active_per_bin: 0.9949748743718594
+    std_firing_rate_target: 9.689372980118495
+    std_fraction_active_per_bin: 0.03286754859450821
+  DG:
+    bin_size: 50.0
+    mean_firing_rate_target: 12.378024563388802
+    mean_fraction_active_per_bin: 0.9824120603015075
+    std_firing_rate_target: 5.034473385156434
+    std_fraction_active_per_bin: 0.10486752138044828
+VIP+:
+  CA1:
+    bin_size: 50.0
+    mean_firing_rate_target: 17.29381478494549
+    mean_fraction_active_per_bin: 0.9598086124401914
+    std_firing_rate_target: 11.596460196434371
+    std_fraction_active_per_bin: 0.15958067576914167
+  CA3:
+    bin_size: 50.0
+    mean_firing_rate_target: 8.66089519952833
+    mean_fraction_active_per_bin: 0.9924242424242424
+    std_firing_rate_target: 1.5582576605960918
+    std_fraction_active_per_bin: 0.06107771021438295
+  DG:
+    bin_size: 50.0
+    mean_firing_rate_target: 6.7321316349853335
+    mean_fraction_active_per_bin: 0.9569377990430622
+    std_firing_rate_target: 4.595717690141084
+    std_fraction_active_per_bin: 0.17447721216951986
