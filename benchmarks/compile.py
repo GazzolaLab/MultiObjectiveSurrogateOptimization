@@ -1,5 +1,6 @@
 import os
 from miv_simulator import mechanisms
+import shutil
 
 
 def find_directories_with_mechanisms(root_dir):
@@ -14,5 +15,8 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     result = find_directories_with_mechanisms(script_dir)
     for directory in result:
+        compiled_dir = os.path.join(directory, "mechanisms", "compiled")
+        if os.path.exists(compiled_dir):
+            shutil.rmtree(compiled_dir)
         print(directory)
-        mechanisms.compile(directory, force=True)
+        mechanisms.compile(os.path.join(directory, "mechanisms"), force=True)
