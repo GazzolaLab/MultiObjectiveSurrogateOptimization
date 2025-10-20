@@ -3,11 +3,12 @@ name = "multiobjectivesurrogateoptimization"
 version = "0.1.0"
 description = "Add your description here"
 authors = [
-    { name = "Frithjof Gressmann", email = "fg14@illinois.edu" }
+    { name = "Frithjof Gressmann", email = "fg14@illinois.edu" },
+    { name = "Ivan Raikov", email = "ivan.g.raikov@gmail.com" },
 ]
 dependencies = [
-    "dmosopt @ git+https://github.com/iraikov/dmosopt.git@d71930b",
-    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@82cac9d",
+    "dmosopt @ git+https://github.com/iraikov/dmosopt.git@f034729",
+    "miv-simulator @ git+https://github.com/GazzolaLab/MiV-Simulator@e440eaa",
     "machinable==4.10.6",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
@@ -18,26 +19,25 @@ dependencies = [
     "nds @ git+https://github.com/KernelA/nds-py.git",
     "jupyter>=1.1.1",
     "omegaconf==2.4.0.dev3",
-    "torch>=2.5.1",
-    "tensorflow==2.16.2",
+    "torch==2.5.1",
+    "tensorflow[and-cuda]==2.16.2",
     "gpytorch>=1.13",
+    "neuron==8.2.6",
     "scienceplots>=2.1.1",
     "tabulate>=0.9.0",
     "sqlean-py>=3.47.0",
     "jaxtyping>=0.2.19",
-    "cleosim>=0.15.0",
+    "salib>=1.5.1",
 ]
 readme = "README.md"
-requires-python = ">= 3.9"
+requires-python = ">= 3.11"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
-    "ruff>=0.6.9",
-]
+[dependency-groups]
+dev = ["ruff>=0.6.9"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -45,8 +45,10 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = [  { index = "pytorch-cpu", marker = "platform_system != 'Darwin'"},]
-torchvision = [{ index = "pytorch-cpu", marker = "platform_system != 'Darwin'"},]
+torch = [{ index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }]
+torchvision = [
+    { index = "pytorch-cpu", marker = "platform_system != 'Darwin'" },
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
