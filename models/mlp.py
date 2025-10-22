@@ -4,7 +4,7 @@ from keras.layers import LeakyReLU
 
 
 class MLP(Model):
-    def prepare_layers(self):
+    def prepare_layers(self, **kwargs):
         multihead = False
 
         # Use LeakyReLU to prevent zeroing of forward pass

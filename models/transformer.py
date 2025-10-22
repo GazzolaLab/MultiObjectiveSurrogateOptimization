@@ -29,7 +29,7 @@ class TransformerBlock(tf.keras.layers.Layer):
 
 
 class Transformer(Model):
-    def prepare_layers(self):
+    def prepare_layers(self, **kwargs):
         self.norm = tf.keras.layers.LayerNormalization()
         self.embedding = tf.keras.layers.Embedding(input_dim=1000, output_dim=16)
         # TODO: support inverse-grad

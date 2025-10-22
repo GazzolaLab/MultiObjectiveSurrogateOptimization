@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import copy
 from sklearn.model_selection import TimeSeriesSplit, KFold
 from sklearn.metrics import (
     accuracy_score,
@@ -176,6 +177,7 @@ class Model(tf.keras.Model):
         normalize_targets="range",
         gradnorm=False,
         regression_loss="mse",
+        architecture=None,
         **kwargs,
     ):
         super(Model, self).__init__(**kwargs)
@@ -209,6 +211,7 @@ class Model(tf.keras.Model):
         self.gradnorm_layers = []
 
         self.timestep = None
+        self.architecture = copy.deepcopy(architecture) if architecture else {}
         if self.use_gradnorm:
             self.objective_weights = tf.Variable(
                 [1] * self.num_objectives,
@@ -222,7 +225,7 @@ class Model(tf.keras.Model):
             )
             self.timestep = tf.Variable(0, dtype=tf.int32, trainable=False)
 
-        self.prepare_layers()
+        self.prepare_layers(**self.architecture)
 
         self.autocompile()
 
@@ -257,6 +260,7 @@ class Model(tf.keras.Model):
             "mode": self.mode,
             "xlb": self.xlb,
             "xub": self.xub,
+            "architecture": copy.deepcopy(self.architecture),
         }
 
     @classmethod
@@ -422,13 +426,19 @@ class Model(tf.keras.Model):
 
     def new(self):
         return self.__class__(
-            self.num_parameters,
-            self.num_constraints,
-            self.num_objectives,
-            self.mode,
-            self.learning_rate,
-            self.xlb,
-            self.xub,
+            num_parameters=self.num_parameters,
+            num_constraints=self.num_constraints,
+            num_objectives=self.num_objectives,
+            mode=self.mode,
+            xlb=self.xlb,
+            xub=self.xub,
+            learning_rate=self.learning_rate,
+            outlier_threshold=self.outlier_threshold,
+            exclude_infeasible=self.exclude_infeasible,
+            normalize_targets=self.normalize_targets,
+            gradnorm=self.use_gradnorm,
+            regression_loss=self.regression_loss,
+            architecture=copy.deepcopy(self.architecture),
         )
 
     def build(self, input_shape=None):
@@ -796,7 +806,10 @@ class Model(tf.keras.Model):
                 normalized = (yR - self.min_mean_yR) / (
                     self.max_std_yR - self.min_mean_yR + tf.keras.backend.epsilon()
                 )
+                normalized = tf.clip_by_value(normalized, 0.0, 1.0)
                 upscaled = normalized * (top - bottom) + bottom
+                lower_bound = tf.constant(-1.0 + 1e-6, dtype=upscaled.dtype)
+                upscaled = tf.maximum(upscaled, lower_bound)
                 return tf.math.log1p(upscaled)
         elif method == "standard":
             if inverse:
