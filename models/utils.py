@@ -6,20 +6,98 @@ import os
 from scipy import stats
 from machinable.utils import save_file, load_file
 import time
+import tempfile
+import subprocess
+import shutil
+
+
+def sh(*cmd, silent_fail=False, error_msg=None):
+    """Helper function to run shell commands with consistent error handling"""
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        if silent_fail:
+            return False
+        if error_msg:
+            raise RuntimeError(f"{error_msg}: {e}")
+        return False
 
 
 class SwapQueue:
     def __init__(self, directory):
         self.directory = directory
+        self.is_remote = ":" in directory and not os.path.isabs(directory.split(":")[0])
+
+        if self.is_remote:
+            # remote_host:/path/on/remote
+            self.remote_host, self.remote_path = directory.split(":", 1)
+            self.local_temp_dir = tempfile.mkdtemp(prefix="swapqueue_")
+        else:
+            self.remote_host = None
+            self.remote_path = None
+            self.local_temp_dir = directory
+
+    def __del__(self):
+        if (
+            self.is_remote
+            and hasattr(self, "local_temp_dir")
+            and os.path.exists(self.local_temp_dir)
+        ):
+            shutil.rmtree(self.local_temp_dir)
+
+    def _scp_to_remote(self, local_file, remote_file):
+        remote_full_path = f"{self.remote_host}:{remote_file}"
+        sh(
+            "scp",
+            local_file,
+            remote_full_path,
+            error_msg=f"Failed to copy {local_file} to {remote_full_path}",
+        )
+
+    def _scp_from_remote(self, remote_file, local_file):
+        remote_full_path = f"{self.remote_host}:{remote_file}"
+        return sh("scp", remote_full_path, local_file, silent_fail=True)
+
+    def _ensure_remote_dir(self):
+        if self.is_remote:
+            sh(
+                "ssh",
+                self.remote_host,
+                f'mkdir -p "{self.remote_path}"',
+                error_msg=f"Failed to create remote directory {self.remote_path}",
+            )
 
     def put(self, key, data):
-        save_file([self.directory, f"{key}.p"], data)
+        local_file_path = os.path.join(self.local_temp_dir, f"{key}.p")
+        save_file(local_file_path, data)
+
+        if self.is_remote:
+            self._ensure_remote_dir()
+            remote_file_path = os.path.join(self.remote_path, f"{key}.p").replace(
+                "\\", "/"
+            )
+            self._scp_to_remote(local_file_path, remote_file_path)
+            os.remove(local_file_path)
 
     def get(self, key):
         while True:
-            payload = load_file([self.directory, f"{key}.p"], None)
-            if payload is not None:
-                return payload
+            if self.is_remote:
+                local_file_path = os.path.join(self.local_temp_dir, f"{key}.p")
+                remote_file_path = os.path.join(self.remote_path, f"{key}.p").replace(
+                    "\\", "/"
+                )
+
+                if self._scp_from_remote(remote_file_path, local_file_path):
+                    payload = load_file(local_file_path, None)
+                    if payload is not None:
+                        os.remove(local_file_path)
+                        return payload
+            else:
+                payload = load_file(os.path.join(self.local_temp_dir, f"{key}.p"), None)
+                if payload is not None:
+                    return payload
+
             time.sleep(5)
 
     def send(self, data):
@@ -36,9 +114,17 @@ class SwapQueue:
         self.done("send")
 
     def done(self, key):
-        file_path = os.path.join(self.directory, f"{key}.p")
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if self.is_remote:
+            remote_file_path = os.path.join(self.remote_path, f"{key}.p").replace(
+                "\\", "/"
+            )
+            sh(
+                "ssh", self.remote_host, f'rm -f "{remote_file_path}"', silent_fail=True
+            )
+        else:
+            file_path = os.path.join(self.local_temp_dir, f"{key}.p")
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 
 def preprocess(x, y, yC=None, remove_outliers=False, nan="remove"):
