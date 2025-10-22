@@ -753,3 +753,38 @@ def predefined_sampling(
         return load_file(source)
 
     save_file(source.replace(".p", ".eval.p"), evaluated_samples)
+
+
+def disk_init_network_objfun(
+    operational_config, opt_targets, param_names, param_tuples, worker, **kwargs
+):
+    def obj(x):
+        return None
+
+    return obj
+
+
+def disk_init_controller(subworld_size, use_coreneuron):
+    pass
+
+
+def disk_compute_objectives(local_features, operational_config, opt_targets):
+    objective_names = operational_config["objective_names"]
+    feature_dtypes = [(feature_name, np.float32) for feature_name in objective_names]
+    constraints = []
+    for _ in operational_config["target_populations"]:
+        constraints.append(-999.0)
+
+    objectives = []
+    features = []
+    for _ in objective_names:
+        objectives.append(-999.0)
+        features.append(-999.0)
+
+    result = (
+        np.asarray(objectives, dtype=np.float32),
+        np.array([tuple(features)], dtype=np.dtype(feature_dtypes)),
+        np.asarray(constraints, dtype=np.float32),
+    )
+
+    return {0: result}

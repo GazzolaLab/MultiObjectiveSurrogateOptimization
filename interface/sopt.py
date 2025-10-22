@@ -141,6 +141,13 @@ class Sopt(Dmosopt):
 
         return m + "[" + fs + "]"
 
+    def population(self):
+        return (
+            self.config.dopt_params.opt_id.replace("dmosopt_", "")
+            .replace("CA1_", "")
+            .replace("_neuron", "")
+        )
+
     def version_opt(self):
         return {
             "dopt_params": {
@@ -181,5 +188,16 @@ class Sopt(Dmosopt):
                 "dynamic_initial_sampling_kwargs": {"source": source},
                 "n_epochs": 0,
                 "n_initial": 0,
+            }
+        }
+
+    def version_to_disk(self, directory: str = "./cache"):
+        return {
+            "dopt_params": {
+                "obj_fun_init_name": "models.ops.disk_init_network_objfun",
+                # "dopt_params.obj_fun_init_args": {},
+                "controller_init_fun_name": "models.ops.disk_init_controller",
+                # "dopt_params.controller_init_fun_args": {},
+                "reduce_fun_name": "models.ops.disk_compute_objectives",
             }
         }
