@@ -3,7 +3,7 @@ from models.model import Model
 
 
 class Resnet(Model):
-    def prepare_layers(self):
+    def prepare_layers(self, **kwargs):
         multihead = False
         n_blocks = 2
         d_block = 192
