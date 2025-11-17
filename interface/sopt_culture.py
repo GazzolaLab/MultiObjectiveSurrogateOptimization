@@ -40,6 +40,8 @@ class Culture(Sopt):
 
         network_config.update(operational_config.get("kwargs", {}))
 
+        network_config["use_coreneuron"] = False
+
         env = Env(**network_config)
 
         objective_names = operational_config["objective_names"]
@@ -53,9 +55,32 @@ class Culture(Sopt):
             phenotype_dict=env.phenotype_ids,
         )
 
+        # sort
+        d = opt_param_config._asdict()
+        if "param_names" in d and "param_tuples" in d:
+            names = list(d["param_names"])
+            tuples = list(d["param_tuples"])
+            order = sorted(range(len(names)), key=lambda i: names[i])
+            sorted_names = [names[i] for i in order]
+            d["param_names"] = sorted_names
+            d["param_tuples"] = [tuples[i] for i in order]
+            if "param_bounds" in d:
+                d["param_bounds"] = {
+                    name: d["param_bounds"][name] for name in sorted_names
+                }
+            if "param_initial_dict" in d:
+                d["param_initial_dict"] = {
+                    name: d["param_initial_dict"][name] for name in sorted_names
+                }
+        if "opt_targets" in d:
+            d["opt_targets"] = dict(sorted(d["opt_targets"].items()))
+
+        opt_param_config = opt_param_config.__class__(**d)
+
         opt_targets = opt_param_config.opt_targets
         param_names = opt_param_config.param_names
         param_tuples = opt_param_config.param_tuples
+
         hyperprm_space = {
             param_pattern: [param_tuple.param_range[0], param_tuple.param_range[1]]
             for param_pattern, param_tuple in zip(param_names, param_tuples)
