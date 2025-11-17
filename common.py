@@ -119,3 +119,25 @@ def restore(key: str, default=None):
     if "." not in key:
         key += ".json"
     return load_file(f"./figures/data/{key}", default)
+
+
+def x_to_weight_dict(d):
+    r = {}
+    for key, val in d.items():
+        n = ""
+        glue = "_"
+        versions = []
+        for fragment in key.split("."):
+            if fragment.startswith("("):
+                versions = eval(fragment)
+                fragment = versions[0]
+            if fragment == "weight":
+                glue = ""
+            n += fragment + glue
+            glue = "-"
+        if versions:
+            for v in versions:
+                r[n.replace(versions[0], v)] = val
+        else:
+            r[n] = val
+    return r
