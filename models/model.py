@@ -211,7 +211,7 @@ class Model(tf.keras.Model):
         self.gradnorm_layers = []
 
         self.timestep = None
-        self.architecture = copy.deepcopy(architecture) if architecture else {}
+        self.architecture = architecture if architecture else {}
         if self.use_gradnorm:
             self.objective_weights = tf.Variable(
                 [1] * self.num_objectives,
@@ -252,15 +252,31 @@ class Model(tf.keras.Model):
         self._last_fit_epochs = -1
 
     def serialize(self):
+        def make_serializable(value):
+            if isinstance(value, dict):
+                return {k: make_serializable(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [make_serializable(v) for v in value]
+            if isinstance(value, np.ndarray):
+                return value.tolist()
+            if isinstance(value, np.generic):
+                return value.item()
+            if hasattr(value, "numpy"):
+                try:
+                    return make_serializable(value.numpy())
+                except Exception:
+                    pass
+            return value
+
         return {
             "cls": self.__class__.__name__,
             "num_parameters": self.num_parameters,
             "num_constraints": self.num_constraints,
             "num_objectives": self.num_objectives,
             "mode": self.mode,
-            "xlb": self.xlb,
-            "xub": self.xub,
-            "architecture": copy.deepcopy(self.architecture),
+            "xlb": make_serializable(self.xlb),
+            "xub": make_serializable(self.xub),
+            "architecture": make_serializable(self.architecture),
         }
 
     @classmethod
@@ -438,7 +454,7 @@ class Model(tf.keras.Model):
             normalize_targets=self.normalize_targets,
             gradnorm=self.use_gradnorm,
             regression_loss=self.regression_loss,
-            architecture=copy.deepcopy(self.architecture),
+            architecture=self.architecture,
         )
 
     def build(self, input_shape=None):
