@@ -1,11 +1,13 @@
 import os
 from machinable import Interface, get
+import shutil
 
 
 class _Ca1SoptBaseline(Interface):
     class Config:
         selection: tuple = (-4, None)
-    
+        ranges: bool = False
+
     def populations(self):
         return [
             "IVY",
@@ -20,7 +22,7 @@ class _Ca1SoptBaseline(Interface):
         ][slice(*self.config.selection)]
 
     def launch(self):
-        from models.ops import import_initial_samples
+        wr = "_wide_range" if self.config.ranges else ""
 
         for nm in self.populations():
             for trial in range(3):
@@ -28,7 +30,7 @@ class _Ca1SoptBaseline(Interface):
                     initial = get(
                         "interface.sopt_modeling",
                         [
-                            f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_{nm}.yaml")""",
+                            f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config{wr}/CA1_{nm}.yaml")""",
                             {
                                 "dopt_params.surrogate_method_name": "gpr",
                                 "dopt_params.n_epochs": 0,
@@ -54,7 +56,7 @@ class _Ca1SoptBaseline(Interface):
                                 e = get(
                                     [
                                         "interface.sopt_modeling",
-                                        f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config/CA1_{nm}.yaml")""",
+                                        f"""~from_protocol("benchmarks/ca1_pinsky_rinzel_modeling/config{wr}/CA1_{nm}.yaml")""",
                                     ],
                                     [version]
                                     + [
@@ -68,11 +70,6 @@ class _Ca1SoptBaseline(Interface):
                                     e.output_filepath
                                 ):
                                     e.commit()
-                                    import_initial_samples(
-                                        file_path=e.output_filepath,
-                                        source=initial.output_filepath,
-                                        num=e.num_initial_samples,
-                                        opt_id=e.config.dopt_params.opt_id,
-                                        feature_dtypes=e.feature_dtypes,
-                                        param_names=e.parameter_names,
+                                    shutil.copyfile(
+                                        initial.output_filepath, e.output_filepath
                                     )
