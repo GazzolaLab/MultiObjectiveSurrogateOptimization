@@ -1,9 +1,7 @@
-import os
-
 from machinable import Interface, get
 
 
-class _Ca1Culture(Interface):
+class _Ca1CultureBaseline(Interface):
     def launch(self):
         baseline = [
             """~from_protocol(
@@ -23,11 +21,11 @@ class _Ca1Culture(Interface):
                 "dopt_params": {
                     "optimizer_name": "nsga2",
                     "initial_method": "mc",
-                    "n_initial": 1,
+                    "n_initial": 10,
                     "initial_maxiter": 10,
-                    "n_epochs": 50,
-                    "population_size": 100,
-                    "num_generations": 10,
+                    "n_epochs": 4,
+                    "population_size": 200,
+                    "num_generations": 400,
                     "termination_conditions": True,
                     "resample_fraction": 0.1,
                     "feasibility_method_name": None,
@@ -38,45 +36,13 @@ class _Ca1Culture(Interface):
             },
         ]
 
-        # gpr
-        get(
-            "interface.sopt_culture",
-            baseline
-            + [
-                {
-                    "dopt_params.surrogate_method_name": "gpr",
-                    "dopt_params.surrogate_method_kwargs": {},
-                },
-            ],
-        ).launch()
-
-        # megp
-        get(
+        return get(
             "interface.sopt_culture",
             baseline
             + [
                 {
                     "dopt_params.surrogate_method_name": "megp",
                     "dopt_params.surrogate_method_kwargs": {},
-                },
-            ],
-        ).launch()
-
-        # joint
-        get(
-            "interface.sopt_culture",
-            baseline
-            + [
-                {
-                    "dopt_params": {
-                        "surrogate_custom_training": "models.ops.joint",
-                        "surrogate_custom_training_kwargs": {
-                            "mode": "c+o",
-                            "sensitivity": True,
-                            "backbone": "fttransformer",
-                            "queue": "/scratch1/08818/fg14/MultiObjectiveSurrogateOptimization/queue",
-                        },
-                    }
                 },
             ],
         ).launch()
