@@ -1,20 +1,10 @@
 # MultiObjectiveSurrogateOptimization
 
-## Getting started
+> Efficient multi-objective optimization of high-dimensional neural dynamical systems by joint learning of objectives, constraints, and sensitivities
+
+## Setting up the environment
 
 Install [uv](https://docs.astral.sh/uv) and `uv sync`.
-
-To use the surrogate models, you also need to install:
-
-```
-tensorflow==2.16.2
-tensorflow-probability==0.24
-```
-and
-```
-torch
-gpytorch
-```
 
 This project uses [machinable](https://machinable.org/); check out the [interface](./interface/) module to learn about available [CLI](https://machinable.org/guide/cli.html) options. 
 
@@ -26,15 +16,16 @@ All experiments and plots are in the notebooks at the top-level of this reposito
 
 Data is available on [globus.org](https://www.globus.org/) and can be retrieved automatically using the [machinable globus interface](https://machinable.org/examples/globus-storage/).
 
-### Authenticating the Globus SDK client
+<details>
+<summary>Authenticating the Globus SDK client</summary>
 
 The globus client must be authenticated once using the following steps:
 
-#### 1. Make sure the globus SDK is available
+**1. Make sure the globus SDK is available**
 
 `pip install globus_sdk`
 
-#### 2. Create the client configuration 
+**2. Create the client configuration**
 
 Create `~/.globus-config.json`
 
@@ -48,11 +39,12 @@ Create `~/.globus-config.json`
 }
 ```
 
-#### 3. Initiate the authentication
+**3. Initiate the authentication**
 
-```
+```sh
 $ python -c "from machinable import get; get('interface.storage.globus').authorizer"
 ```
 
 This will generate a URL to obtain a client token that you need to copy back into the terminal.
 
+</details>

@@ -1,7 +1,7 @@
 [project]
 name = "multiobjectivesurrogateoptimization"
 version = "0.1.0"
-description = "Add your description here"
+description = "Efficient multi-objective optimization of high-dimensional neural dynamical systems by joint learning of objectives, constraints, and sensitivities"
 authors = [
     { name = "Frithjof Gressmann", email = "fg14@illinois.edu" },
     { name = "Ivan Raikov", email = "ivan.g.raikov@gmail.com" },
@@ -28,6 +28,7 @@ dependencies = [
     "sqlean-py>=3.47.0",
     "jaxtyping>=0.2.19",
     "salib>=1.5.1",
+    "spike-encoder",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"
@@ -49,6 +50,7 @@ torch = [{ index = "pytorch-cpu", marker = "platform_system != 'Darwin'" }]
 torchvision = [
     { index = "pytorch-cpu", marker = "platform_system != 'Darwin'" },
 ]
+spike-encoder = { git = "https://github.com/iraikov/neural_spike_encoding.git" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
