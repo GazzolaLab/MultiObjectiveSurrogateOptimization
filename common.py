@@ -8,6 +8,7 @@ import numpy as np
 import scienceplots
 from scipy import stats
 from sklearn import metrics
+import matplotlib
 
 plt.style.use(["science", "nature"])
 plt.rcParams.update({"figure.dpi": "300"})
@@ -15,6 +16,20 @@ plt.rcParams.update({"figure.dpi": "300"})
 np.set_printoptions(linewidth=np.inf, suppress=True)
 
 FIGURE_EXPORT_DIRECTORY = os.environ.get("FIGURES_MSO", "./figures")
+
+
+def rc_context():
+    return matplotlib.rc_context(
+        {
+            "font.size": 20,
+            "axes.titlesize": 20,
+            "axes.labelsize": 20,
+            "xtick.labelsize": 20,
+            "ytick.labelsize": 20,
+            "legend.fontsize": 20,
+            "figure.titlesize": 24,
+        }
+    )
 
 
 colors = {
@@ -39,6 +54,7 @@ mcolors = {
             "c+o-resnet",
             "o-fttransformer",
             "c+o-fttransformer",
+            "-",
         ]
     )
 }

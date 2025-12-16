@@ -1,0 +1,50 @@
+logs:
+./storage/068fe3b7-9072-751a-8000-74234e98afe7/c67f92/output.log:231032:INFO:miv_simulator.utils.simtime:*** rank 0 computation time at t=9749.13 ms was 0.42 s
+./storage/068fd482-2a28-746d-8000-74234e98afe7/6972b8/output.log:259761:INFO:miv_simulator.utils.simtime:*** rank 0 computation time at t=9749.13 ms was 0.41 s
+./storage/068fd482-2a28-746d-8000-74234e98afe7/247de3/output.log:265516:INFO:miv_simulator.utils.simtime:*** rank 0 computation time at t=9749.13 ms was 0.39 s
+./storage/068fd482-2a28-746d-8000-74234e98afe7/497c06/output.log:270590:INFO:miv_simulator.utils.simtime:*** rank 0 computation time at t=9749.13 ms was 0.40 s
+INFO:miv_simulator.network:Execution time summary for host 0:
+  created cells in 27.53 s
+  connected cells in 216.22 s
+  created gap junctions in 0.00 s
+  ran simulation in 3719.83 s
+  spike communication time: 119.11 s
+  event handling time: 0.00 s
+  numerical integration time: 0.00 s
+  voltage transfer time: 0.00 s
+INFO:miv_simulator.network:Execution time summary for host 0:
+  created cells in 26.69 s
+  connected cells in 214.30 s
+  created gap junctions in 0.00 s
+  ran simulation in 3895.27 s
+  spike communication time: 118.29 s
+  event handling time: 0.00 s
+  numerical integration time: 0.00 s
+  voltage transfer time: 0.00 s
+INFO:miv_simulator.network:Execution time summary for host 0:
+  created cells in 27.56 s
+  connected cells in 216.05 s
+  created gap junctions in 0.00 s
+  ran simulation in 3824.09 s
+  spike communication time: 126.14 s
+  event handling time: 0.00 s
+  numerical integration time: 0.00 s
+  voltage transfer time: 0.00 s
+INFO:miv_simulator.network:Execution time summary for host 0:
+  created cells in 26.94 s
+  connected cells in 215.37 s
+  created gap junctions in 0.00 s
+  ran simulation in 3801.90 s
+  spike communication time: 117.77 s
+  event handling time: 0.00 s
+  numerical integration time: 0.00 s
+  voltage transfer time: 0.00 s
+INFO:miv_simulator.network:Execution time summary for host 0:
+  created cells in 26.94 s
+  connected cells in 215.37 s
+  created gap junctions in 0.00 s
+  ran simulation in 3801.90 s
+  spike communication time: 117.77 s
+  event handling time: 0.00 s
+  numerical integration time: 0.00 s
+  voltage transfer time: 0.00 s
