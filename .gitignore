@@ -12,6 +12,8 @@ index/
 *.p
 !figures/data/figure4-sopt-grad-traces.p
 !figures/data/figure4-support-benchmark.p
+!figures/data/figure5-ca1_culture_eval_data.p
+ca1_network_runs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
